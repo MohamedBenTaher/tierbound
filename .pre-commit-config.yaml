@@ -1,0 +1,31 @@
+# Exclude vendored pstack from whitespace fixers so upstream stays byte-identical.
+exclude: ^\.cursor/skills/
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.3
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^worker/
+      - id: ruff-format
+        files: ^worker/
+
+  - repo: local
+    hooks:
+      - id: fallow-audit
+        name: fallow-audit
+        entry: scripts/fallow-audit-hook.sh
+        language: system
+        pass_filenames: false
+        files: \.(ts|tsx|js|mjs)$

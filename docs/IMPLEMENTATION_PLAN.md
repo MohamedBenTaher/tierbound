@@ -1,0 +1,619 @@
+# tierbound — Implementation Plan
+
+Follow steps in order unless a dependency note says otherwise. Each step ends with a **Done when** check you can run. Commit after each step that passes its check (message suggested below).
+
+Sources checked while writing this plan (Africa/Casablanca, 2026-11-02):
+- Supabase Queues / pgmq: https://supabase.com/docs/guides/queues/pgmq
+- Supabase Queues API (`pgmq_public`): https://supabase.com/docs/guides/queues/api
+- Deploy MCP on Edge Functions + OAuth 2.1: https://supabase.com/docs/guides/ai-tools/byo-mcp
+- OAuth 2.1 server: https://supabase.com/docs/guides/auth/oauth-server/getting-started
+- GitHub webhook signature validation: https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
+
+Anything still marked **verify** must be confirmed against live docs or a local `supabase` run before you rely on it.
+
+---
+
+## Dependency graph / ordering
+
+```
+0.1 → 0.2 → 0.3 → 0.4
+         ↓
+1.1 → 1.2 → 1.3 → 1.4 → 1.5
+                ↘     ↗
+                 1.6 (kill -9 / RLS denial tests can start after 1.1+1.4)
+         ↓
+2.1 → 2.2 → 2.3 → 2.4 → 2.5
+         ↓
+3.1 → 3.2 → 3.3 → 3.4 → 3.5
+         ↓
+After v1 (optional, do not start before demo video exists)
+```
+
+- Weekend 1 does **not** need OAuth or MCP.
+- Weekend 2 needs Weekend 1's tables, roles, and at least one real `proposed_action`.
+- Weekend 3 needs Weekend 2's approve → effect path working locally.
+- Do not add BigQuery, a web UI, or a second action type until After v1.
+
+---
+
+## Phase 0 — Weekend 0: setup (one evening)
+
+### Step 0.1 — Confirm scaffold and local secrets shape
+
+**Goal:** Repo is usable; secrets documented; no Docker yet if you are not ready.
+
+**Files:** `.env.example` (already present), `README.md`, `docs/SPEC.md`
+
+**Commands:**
+```bash
+cd ~/tierbound
+cp .env.example .env   # fill later from `supabase status`
+git status
+```
+
+**Notes:** Keep real keys out of git. GitHub App private key goes in Supabase Vault later, not in `.env`.
+
+**Done when:** `.env` exists locally, is gitignored, and `git check-ignore -v .env` prints a rule.
+
+**Commit:** (usually none — `.env` must not be committed)
+
+---
+
+### Step 0.2 — Start local Supabase and capture URLs/keys
+
+**Goal:** Local stack running; `.env` filled from `supabase status`.
+
+**Files:** `.env`, `supabase/config.toml`
+
+**Commands:**
+```bash
+supabase start
+supabase status -o env >> .env.tmp
+# merge URL, anon, service_role, DB URL into .env by hand
+```
+
+**Notes:**
+- CLI currently installed: v2.98.2. MCP OAuth middleware docs ask for **CLI ≥ 2.117.0** to inject `SUPABASE_FUNCTION_SLUG` locally — **verify** / upgrade before Weekend 2 (`brew upgrade supabase` or install from docs).
+- Do not commit `.temp/` (already gitignored).
+
+**Done when:** `curl -s "$SUPABASE_URL/rest/v1/" -H "apikey: $SUPABASE_ANON_KEY" | head` returns a response (not connection refused).
+
+**Commit:** `chore(w0.2): document local supabase env keys in .env.example` (only if you had to extend the example)
+
+---
+
+### Step 0.3 — Register GitHub App on the dogfood repo
+
+**Goal:** App can read issues and write issue comments; webhook secret known.
+
+**Files:** none in repo yet; store App ID / installation id / webhook secret in password manager + later Vault
+
+**Commands:** (browser)
+1. GitHub → Settings → Developer settings → GitHub Apps → New
+2. Permissions: **Issues** Read & Write; subscribe to **Issues** events
+3. Webhook URL: will point at `…/functions/v1/ingest` (use a tunnel in W1; leave blank until then if needed)
+4. Generate and download private key (`.pem`)
+
+**Notes:** Signature header is `X-Hub-Signature-256` = `sha256=` + HMAC-SHA256(secret, **raw body**). Compare with constant-time equality. Idempotency key for ingest: `X-GitHub-Delivery`.
+
+**Done when:** You can open a test issue and see a delivery attempt (or you have App ID + PEM + webhook secret saved offline).
+
+**Commit:** none (secrets stay out of git)
+
+---
+
+### Step 0.4 — Pin LLM + agent config stub
+
+**Goal:** One versioned config for `triage-drafter`.
+
+**Files to create:**
+- `worker/config/triage-drafter.toml`
+- `worker/src/tierbound_worker/config_hash.py` (stub ok)
+
+**Commands:**
+```bash
+mkdir -p worker/config
+# create toml with model, prompt path, tier=draft, tool grant list
+```
+
+**Notes:** `config_hash` = sha256 of canonical JSON `{prompt, model, tool_grant, tier}` with sorted keys. Reuse Groq `gpt-oss-20b` from citibench unless you deliberately change it — pin the exact model id string.
+
+**Done when:** File exists and a one-liner prints a stable hex hash twice in a row for the same file.
+
+**Commit:** `chore(w0.4): pin triage-drafter config and config_hash stub`
+
+---
+
+## Phase 1 — Weekend 1: durable pipeline
+
+### Step 1.1 — Schema migration: tables, enums, pgmq queue
+
+**Goal:** Five tables + `jobs` queue exist after `supabase db reset`.
+
+**Files:**
+- `supabase/migrations/YYYYMMDDHHMMSS_init_tierbound.sql`
+
+**Commands:**
+```bash
+supabase migration new init_tierbound
+# edit the generated file, then:
+supabase db reset
+```
+
+**Key SQL (shape — adjust types as you verify):**
+```sql
+create extension if not exists pgmq;
+create extension if not exists pgcrypto;
+
+create type public.agent_tier as enum ('read', 'draft');
+create type public.action_status as enum (
+  'proposed', 'approved', 'rejected', 'executed', 'failed'
+);
+create type public.effect_status as enum ('claimed', 'posted', 'failed');
+
+create table public.agents (
+  id uuid primary key default gen_random_uuid(),
+  owner uuid not null references auth.users (id),
+  name text not null,
+  tier public.agent_tier not null default 'draft',
+  config_hash text not null,
+  evals_passed_hash text,
+  unique (owner, name)
+);
+
+create table public.runs (
+  id uuid primary key default gen_random_uuid(),
+  agent_id uuid not null references public.agents (id),
+  job_msg_id bigint,
+  attempt int not null default 1,
+  status text not null,
+  error text,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz
+);
+
+create table public.proposed_actions (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null references public.runs (id),
+  kind text not null check (kind = 'github_comment'),
+  target jsonb not null,          -- {repo, issue_number}
+  payload jsonb not null,
+  payload_hash text not null,
+  idempotency_key text not null unique,
+  status public.action_status not null default 'proposed',
+  created_at timestamptz not null default now()
+);
+
+create table public.approvals (
+  action_id uuid primary key references public.proposed_actions (id),
+  approver uuid not null references auth.users (id),
+  payload_hash text not null,
+  decision text not null check (decision in ('approved', 'rejected')),
+  reason text,
+  decided_at timestamptz not null default now()
+);
+
+create table public.effects (
+  action_id uuid primary key references public.proposed_actions (id),
+  status public.effect_status not null default 'claimed',
+  external_id text,               -- comment URL once posted
+  attempts int not null default 0,
+  last_error text,
+  claimed_at timestamptz not null default now(),
+  executed_at timestamptz
+);
+
+select pgmq.create('jobs');
+-- optional: table for webhook delivery dedupe
+create table public.webhook_deliveries (
+  delivery_id text primary key,
+  received_at timestamptz not null default now()
+);
+```
+
+**Notes:**
+- Enable pgmq via migration (`create extension pgmq`) — **verify** local image includes it (Supabase docs: Postgres ≥ 15.6.1.143).
+- Prefer `pgmq.send` / `pgmq.read` / `pgmq.archive` from the server role; expose `pgmq_public` only if a client needs it.
+
+**Done when:**
+```bash
+supabase db reset
+psql "$DATABASE_URL" -c "select queue_name from pgmq.list_queues();"
+# expect a row: jobs
+psql "$DATABASE_URL" -c "\dt public.*"
+# expect agents, runs, proposed_actions, approvals, effects, webhook_deliveries
+```
+
+**Commit:** `feat(w1.1): init schema, roles prep, pgmq jobs queue`
+
+---
+
+### Step 1.2 — Roles, grants, RLS
+
+**Goal:** `tierbound_worker` cannot write `approvals`/`effects`; authenticated owner can; effector role can claim effects.
+
+**Files:** same migration or `…_roles_rls.sql`
+
+**Key SQL:**
+```sql
+create role tierbound_worker nologin;
+create role tierbound_effector nologin;
+
+grant usage on schema public to tierbound_worker, tierbound_effector, authenticated;
+
+grant insert, select on public.runs, public.proposed_actions to tierbound_worker;
+-- explicitly no grant on approvals/effects
+
+grant select on public.proposed_actions, public.approvals to tierbound_effector;
+grant insert, update, select on public.effects to tierbound_effector;
+grant update on public.proposed_actions to tierbound_effector; -- mark executed
+
+alter table public.agents enable row level security;
+alter table public.runs enable row level security;
+alter table public.proposed_actions enable row level security;
+alter table public.approvals enable row level security;
+alter table public.effects enable row level security;
+
+-- owner policies (authenticated): using (owner = auth.uid()) via join to agents
+-- worker/effector: bypass via table grants + security definer helpers OR set role in connection
+```
+
+**Notes:** How the worker authenticates to Postgres (dedicated DB user mapped to `tierbound_worker` vs `SET ROLE`) — **verify** which pattern you prefer for local + hosted. Document the choice in the migration comment.
+
+**Done when:**
+```sql
+set role tierbound_worker;
+insert into public.approvals (action_id, approver, payload_hash, decision)
+values ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001', 'x', 'approved');
+-- expect ERROR: permission denied
+```
+
+**Commit:** `feat(w1.2): worker/effector roles and RLS`
+
+---
+
+### Step 1.3 — `ingest` Edge Function
+
+**Goal:** Verified `issues.opened` webhook enqueues one pgmq message; duplicate delivery id is a no-op.
+
+**Files:**
+- `supabase/functions/ingest/index.ts`
+- `supabase/config.toml` (`[functions.ingest] verify_jwt = false` — GitHub has no JWT)
+
+**Commands:**
+```bash
+# after implementing:
+supabase functions serve ingest --env-file .env
+# elsewhere: forward GitHub webhook (smee/ngrok) to http://127.0.0.1:54321/functions/v1/ingest
+```
+
+**Notes:**
+- Read **raw** body for HMAC; then `JSON.parse`.
+- Require `X-Hub-Signature-256`, `X-GitHub-Event: issues`, `action === "opened"`.
+- Insert `webhook_deliveries(delivery_id)` first; on unique violation return 200.
+- Enqueue: `select pgmq.send('jobs', '{"repo":"…","issue_number":N,"delivery_id":"…"}'::jsonb);` via service role client / SQL.
+
+**Done when:** Opening a real issue (or curling a signed fixture) inserts one row into `pgmq.q_jobs` within a few seconds; replaying the same `X-GitHub-Delivery` does not add a second message.
+
+**Commit:** `feat(w1.3): ingest webhook with signature check and pgmq enqueue`
+
+---
+
+### Step 1.4 — Python worker: read → run ledger → propose
+
+**Goal:** Worker turns a job into exactly one `proposed_action`.
+
+**Files:**
+- `worker/pyproject.toml`
+- `worker/src/tierbound_worker/{__init__,main,pgmq,hashing,llm,github_ro}.py`
+- `worker/tests/test_idempotency.py`
+- `worker/tests/test_hashing.py`
+
+**Commands:**
+```bash
+cd worker
+uv sync
+uv run python -m tierbound_worker.main
+uv run pytest
+```
+
+**Notes:**
+```sql
+-- read with visibility timeout (seconds), qty
+select * from pgmq.read('jobs', 60, 1);
+-- on success:
+select pgmq.archive('jobs', :msg_id);
+-- extend lease if LLM is slow:
+select pgmq.set_vt('jobs', :msg_id, 120);
+```
+- Canonical payload hash: `sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode())`.
+- `idempotency_key = f"{agent_id}:{repo}:{issue_number}:{config_hash}"`.
+- On unique violation, treat as success and archive the message.
+- Refuse to run if agent.tier == `draft` and `evals_passed_hash != config_hash` (can soft-skip until W3 by seeding equal hashes in seed SQL).
+
+**Done when:** After enqueue from 1.3, within 30s:
+```sql
+select count(*) from proposed_actions;  -- 1
+select status from runs order by started_at desc limit 1;  -- succeeded
+```
+
+**Commit:** `feat(w1.4): worker proposes github_comment with idempotency key`
+
+---
+
+### Step 1.5 — kill -9 retry proof
+
+**Goal:** Crash mid-run still yields one action after VT expires.
+
+**Files:** `worker/tests/test_retry_after_crash.md` (manual script) or an integration test that shortens VT.
+
+**Commands:**
+```bash
+# start worker, enqueue job, kill -9 during LLM call, wait VT, restart worker
+kill -9 $(pgrep -f tierbound_worker)
+```
+
+**Done when:** `select count(*) from proposed_actions where idempotency_key = '…'` is still `1`; `runs` shows attempt ≥ 2.
+
+**Commit:** `test(w1.5): document kill -9 retry leaving one proposed_action`
+
+---
+
+### Step 1.6 — Automated RLS denial test
+
+**Goal:** CI/local test proves worker cannot insert approvals/effects.
+
+**Files:** `worker/tests/test_worker_role_denied.sql` or pytest using psycopg as worker role
+
+**Done when:** Test fails the build if those inserts succeed; currently fails closed (permission denied).
+
+**Commit:** `test(w1.6): worker role denied on approvals and effects`
+
+---
+
+## Phase 2 — Weekend 2: the gate
+
+### Step 2.1 — Enable Auth OAuth 2.1 locally + consent stub
+
+**Goal:** OAuth server config present; consent route reachable (minimal page ok).
+
+**Files:**
+- `supabase/config.toml`
+```toml
+[auth]
+site_url = "http://localhost:3000"
+
+[auth.oauth_server]
+enabled = true
+authorization_url_path = "/oauth/consent"
+allow_dynamic_registration = true
+```
+- Minimal consent host — **verify**: Supabase Library "OAuth Consent" block for Next/TanStack, or a tiny static page that calls `supabase.auth.oauth.approveAuthorization`. Out of scope to build a product UI; a throwaway consent app under `consent/` is fine and not a "dashboard".
+
+**Notes:** Project must use **asymmetric** JWT signing (ES256/RS256). Local/default HS256 will break `@supabase/server` user auth — **verify** how to enable signing keys on local CLI.
+
+**Done when:** `curl -s "$SUPABASE_URL/auth/v1/.well-known/oauth-authorization-server" | head` returns JSON with `issuer` / `authorization_endpoint` (paths per current docs).
+
+**Commit:** `feat(w2.1): enable oauth 2.1 server config and consent stub`
+
+---
+
+### Step 2.2 — `mcp` Edge Function with five tools
+
+**Goal:** Remote MCP (Streamable HTTP) behind `withOAuthProtectedResource` + `withSupabase({ auth: 'user' })`.
+
+**Files:**
+- `supabase/functions/mcp/index.ts`
+- `supabase/config.toml`:
+```toml
+[functions.mcp]
+verify_jwt = false   # middleware verifies; discovery must stay public
+```
+
+**Tool signatures:**
+| Tool | Args | Behavior |
+| --- | --- | --- |
+| `list_pending_actions` | none | rows in `proposed` for `auth.uid()` owner |
+| `get_action` | `action_id` | payload, payload_hash, agent config_hash |
+| `approve_action` | `action_id`, `payload_hash` | refuse if hash ≠ recomputed; insert approvals |
+| `reject_action` | `action_id`, `reason` | insert rejection |
+| `get_run` | `run_id` | run ledger row |
+
+**Reference pattern** (from Supabase BYO MCP docs):
+```ts
+import { createMcpHandler, McpServer } from "npm:@modelcontextprotocol/server@^2.0.0";
+import { pipeline } from "npm:@supabase/middleware@1";
+import { withOAuthProtectedResource, withSupabase } from "npm:@supabase/server@1";
+```
+
+**Done when:**
+```bash
+curl -si -X POST "$SUPABASE_URL/functions/v1/mcp" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}' \
+  | grep -i 'www-authenticate'
+# expect 401 + resource_metadata URL
+```
+And after OAuth from Cursor: `list_pending_actions` returns the W1 draft.
+
+**Commit:** `feat(w2.2): oauth-protected mcp tools for approve/reject`
+
+---
+
+### Step 2.3 — `effect-github-comment` + DB webhook
+
+**Goal:** Approval triggers exactly-once post.
+
+**Files:**
+- `supabase/functions/effect-github-comment/index.ts`
+- migration or dashboard config for Database Webhook on `approvals` insert — **verify** local DB webhook → Edge Function wiring (`supabase/config.toml` or `pg_net`)
+
+**Claim pattern:**
+```sql
+insert into public.effects (action_id, status, attempts)
+values ($1, 'claimed', 1)
+on conflict (action_id) do nothing
+returning *;
+```
+If `RETURNING` empty: load existing row; if `status = 'posted'` → no-op; if `claimed`/`failed` and `external_id is null` → retry path.
+
+Before post on retry: search issue comments for `<!-- tierbound:$action_id -->`. On success set `external_id`, `status='posted'`, `executed_at=now()`, action status `executed`.
+
+GitHub App JWT → installation token; PEM from Vault — **verify** Vault API from Edge Functions (`supabase vault` / secrets).
+
+**Done when:** Approving via MCP creates one GitHub comment; second call to effector leaves comment count unchanged.
+
+**Commit:** `feat(w2.3): effector claims uniquely and posts once`
+
+---
+
+### Step 2.4 — Tamper + commitment denial tests
+
+**Goal:** Automated proofs for the interview demo.
+
+**Files:** `worker/tests/` or `supabase/tests/` (pgTAP if you use it — **verify**)
+
+**Cases:**
+1. Update `payload` in SQL; `approve_action` with old hash → refused; no comment.
+2. Force-insert approval with wrong hash; effector refuses.
+3. As worker role, `insert into effects` → denied (commitment stand-in).
+
+**Done when:** All three are automated and green against local Supabase.
+
+**Commit:** `test(w2.4): hash tamper and RLS commitment denial`
+
+---
+
+### Step 2.5 — Connect Cursor MCP client
+
+**Goal:** Human can approve from Cursor end-to-end.
+
+**Files:** `.cursor/mcp.json` (local only — **do not commit secrets**; document example in README)
+
+**Example:**
+```json
+{
+  "mcpServers": {
+    "tierbound": {
+      "url": "http://127.0.0.1:54321/functions/v1/mcp"
+    }
+  }
+}
+```
+
+**Done when:** 45s demo steps 0–36 work manually once.
+
+**Commit:** `docs(w2.5): cursor mcp connection notes`
+
+---
+
+## Phase 3 — Weekend 3: proof
+
+### Step 3.1 — Golden set (~15 issues)
+
+**Goal:** Rubric JSON for area/label + must-not-say.
+
+**Files:** `evals/golden/*.json`, `evals/score.py` (or TS)
+
+**Done when:** `uv run python evals/score.py --dry-run` loads all fixtures without error.
+
+**Commit:** `feat(w3.1): golden issue fixtures and scorer stub`
+
+---
+
+### Step 3.2 — GitHub Action eval gate
+
+**Goal:** PRs that change agent config must pass evals for the new `config_hash`.
+
+**Files:**
+- `.github/workflows/ci.yml` (enable the commented W3 job)
+- `evals/gate.sh`
+
+**Notes:** On merge to `main`, a workflow (or manual script) sets `agents.evals_passed_hash = config_hash` for that hash only.
+
+**Done when:** A PR that worsens the prompt (e.g. promises fix dates) goes red; a clean config stays green.
+
+**Commit:** `feat(w3.2): CI eval gate on config_hash`
+
+---
+
+### Step 3.3 — Activation rule
+
+**Goal:** Worker refuses draft agents when hashes diverge.
+
+**Files:** `worker/src/tierbound_worker/main.py`, migration seed
+
+**Done when:** Unit test: mismatched hashes → no `proposed_action`; matching → proposes.
+
+**Commit:** `feat(w3.3): require evals_passed_hash = config_hash for draft`
+
+---
+
+### Step 3.4 — Injected GitHub 500 + postmortem
+
+**Goal:** Failure mode from SPEC §7 is real and written up.
+
+**Files:**
+- effector retry logic (if not finished in 2.3)
+- `docs/postmortems/postmortem-001.md`
+- `runbooks/effect-stuck.md`
+
+**Done when:** Simulated 500 after claim leaves `effects.status` in `claimed`/`failed` with null `external_id`; retry posts once; postmortem has timeline, impact, root cause, fix, test added.
+
+**Commit:** `docs(w3.4): postmortem-001 and effect-stuck runbook`
+
+---
+
+### Step 3.5 — README polish + 45s video
+
+**Goal:** Public-facing proof.
+
+**Files:** `README.md`, `docs/demo.mp4` or linked URL
+
+**Done when:** Video covers SPEC §8 script; README links SPEC, plan, video; architecture mermaid renders on GitHub.
+
+**Commit:** `docs(w3.5): demo video and README architecture`
+
+---
+
+## After v1 (stretch — do not schedule inside W0–W3)
+
+| Id | Item | Notes |
+| --- | --- | --- |
+| A1 | Post demo on X tagging Supabase MCP/Queues | Marketing, not code |
+| A2 | Upstream issue/PR: tier-scoped tool grants on Supabase MCP | Strongest signal for the JD |
+| A3 | Small BigQuery export of `runs`/`effects` + Terraform | Only if still applying to AI Platform |
+| A4 | `test-scale` webhook storm against `ingest` | Optional load proof |
+| A5 | One-command Supabase template | After dogfood is boringly reliable |
+
+---
+
+## Per-step test strategy
+
+| Phase | Default tests |
+| --- | --- |
+| W0 | Manual smoke (`supabase status`, hash stability) |
+| W1 | SQL assertions + pytest for hashing/idempotency; one integration path issue→propose |
+| W2 | HTTP tests for MCP 401/metadata; integration approve→comment; RLS denial |
+| W3 | Offline golden scoring; CI job on fixture PR; fault-injection for effector |
+
+Prefer behavior over mocks: hit local Supabase whenever the step touches Postgres, Auth, or Edge Functions.
+
+---
+
+## Risks / unknowns (verify before coding)
+
+1. **Local JWT signing keys (ES256/RS256)** — required by `@supabase/server` `withSupabase({ auth: 'user' })`; legacy HS256 is rejected. Confirm local CLI path to asymmetric keys.
+2. **CLI version** — BYO MCP docs want ≥ 2.117.0 for function slug injection; machine currently has 2.98.2.
+3. **DB webhooks → Edge Function on local** — confirm `supabase_functions.http_request` / dashboard equivalent works offline; fallback: call effector directly from MCP approve tool in dev only (do not keep that shortcut in prod design).
+4. **Vault from Edge Functions** — confirm reading GitHub App PEM via Vault vs `supabase secrets` for v1; pick one and document.
+5. **Consent page hosting** — OAuth needs a real Site URL; plan a minimal consent app without turning it into a product dashboard.
+6. **pgmq extension on hosted free tier / local image** — already documented for recent Postgres images; re-check if `create extension pgmq` fails.
+7. **Cursor MCP OAuth** — client must support OAuth 2.1 + dynamic registration against Supabase; if Cursor build lags, use MCP Inspector for demos (**verify** current Cursor MCP auth support).
+
+---
+
+## Resume lines (after ship)
+
+Copy from `docs/SPEC.md` §10 once the demo video and postmortem exist. Do not add job-seeking language to the README.

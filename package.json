@@ -1,0 +1,13 @@
+{
+  "name": "tierbound",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.5",
+  "scripts": {
+    "fallow": "fallow",
+    "audit": "fallow audit --quiet"
+  },
+  "devDependencies": {
+    "fallow": "^3.38.1"
+  }
+}

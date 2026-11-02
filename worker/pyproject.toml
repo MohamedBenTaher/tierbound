@@ -1,0 +1,30 @@
+[project]
+name = "tierbound-worker"
+version = "0.1.0"
+description = "Propose-only worker for tierbound (pgmq consumer)"
+readme = "README.md"
+authors = [
+    { name = "Mohamed Ben Taher", email = "mbentaher1998@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
