@@ -108,7 +108,7 @@ supabase status -o env >> .env.tmp
 
 **Files to create:**
 - `worker/config/triage-drafter.toml`
-- `worker/src/tierbound_worker/config_hash.py` (stub ok)
+- `worker/internal/agentconfig/config.go` (load TOML with `github.com/BurntSushi/toml`, compute `config_hash` via `internal/hashing`)
 
 **Commands:**
 ```bash
@@ -118,7 +118,7 @@ mkdir -p worker/config
 
 **Notes:** `config_hash` = sha256 of canonical JSON `{prompt, model, tool_grant, tier}` with sorted keys. Reuse Groq `gpt-oss-20b` from citibench unless you deliberately change it — pin the exact model id string.
 
-**Done when:** File exists and a one-liner prints a stable hex hash twice in a row for the same file.
+**Done when:** File exists and `go run ./cmd/worker -print-config-hash` prints the same hex hash twice in a row for the same file.
 
 **Commit:** `chore(w0.4): pin triage-drafter config and config_hash stub`
 
@@ -299,22 +299,25 @@ supabase functions serve ingest --env-file .env
 
 ---
 
-### Step 1.4 — Python worker: read → run ledger → propose
+### Step 1.4 — Go worker: read → run ledger → propose
 
 **Goal:** Worker turns a job into exactly one `proposed_action`.
 
 **Files:**
-- `worker/pyproject.toml`
-- `worker/src/tierbound_worker/{__init__,main,pgmq,hashing,llm,github_ro}.py`
-- `worker/tests/test_idempotency.py`
-- `worker/tests/test_hashing.py`
+- `worker/cmd/worker/main.go` (flags, signal handling with `signal.NotifyContext`, poll loop)
+- `worker/internal/pgmq/pgmq.go` (read / archive / set_vt / send to DLQ via pgx)
+- `worker/internal/hashing/hashing.go` (already exists: canonical sha256)
+- `worker/internal/llm/llm.go` (OpenAI-compatible chat call to Groq, `context` timeout)
+- `worker/internal/githubro/githubro.go` (read-only issue fetch, `net/http`)
+- `worker/internal/propose/propose.go` (run ledger + insert proposed_action)
+- `worker/internal/propose/propose_test.go`, `worker/internal/hashing/hashing_test.go`
 
 **Commands:**
 ```bash
 cd worker
-uv sync
-uv run python -m tierbound_worker.main
-uv run pytest
+go get github.com/jackc/pgx/v5 github.com/BurntSushi/toml
+go run ./cmd/worker
+go test ./...
 ```
 
 **Notes:**
@@ -322,14 +325,16 @@ uv run pytest
 -- read with visibility timeout (seconds), qty
 select * from pgmq.read('jobs', 60, 1);
 -- on success:
-select pgmq.archive('jobs', :msg_id);
+select pgmq.archive('jobs', $1);
 -- extend lease if LLM is slow:
-select pgmq.set_vt('jobs', :msg_id, 120);
+select pgmq.set_vt('jobs', $1, 120);
 ```
-- Canonical payload hash: `sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode())`.
-- `idempotency_key = f"{agent_id}:{repo}:{issue_number}:{config_hash}"`.
-- On unique violation, treat as success and archive the message.
+- Use `pgxpool` with `WORKER_DATABASE_URL`; one goroutine per job is fine but cap concurrency at 1 for v1 so retries are easy to reason about.
+- Canonical payload hash: `hashing.Canonical(payload)` where payload is a `map[string]any` (encoding/json sorts map keys, compact output). Never hash a struct whose field order could change silently.
+- `idempotency_key = fmt.Sprintf("%s:%s:%d:%s", agentID, repo, issueNumber, configHash)`.
+- On unique violation (`pgconn.PgError` code `23505`, checked with `errors.As`), treat as success and archive the message.
 - Refuse to run if agent.tier == `draft` and `evals_passed_hash != config_hash` (can soft-skip until W3 by seeding equal hashes in seed SQL).
+- Tests that need Postgres read `TEST_DATABASE_URL` and call `t.Skip` when it's unset, so `go test ./...` stays green in pre-commit.
 
 **Done when:** After enqueue from 1.3, within 30s:
 ```sql
@@ -345,12 +350,12 @@ select status from runs order by started_at desc limit 1;  -- succeeded
 
 **Goal:** Crash mid-run still yields one action after VT expires.
 
-**Files:** `worker/tests/test_retry_after_crash.md` (manual script) or an integration test that shortens VT.
+**Files:** `runbooks/retry-after-crash.md` (manual script) or `worker/internal/propose/retry_test.go` that shortens VT.
 
 **Commands:**
 ```bash
 # start worker, enqueue job, kill -9 during LLM call, wait VT, restart worker
-kill -9 $(pgrep -f tierbound_worker)
+kill -9 $(pgrep -f 'cmd/worker|/worker$')   # or build once: go build -o bin/worker ./cmd/worker && pkill -9 -f bin/worker
 ```
 
 **Done when:** `select count(*) from proposed_actions where idempotency_key = '…'` is still `1`; `runs` shows attempt ≥ 2.
@@ -363,7 +368,7 @@ kill -9 $(pgrep -f tierbound_worker)
 
 **Goal:** CI/local test proves worker cannot insert approvals/effects.
 
-**Files:** `worker/tests/test_worker_role_denied.sql` or pytest using psycopg as worker role
+**Files:** `supabase/tests/worker_role_denied.sql` or `worker/internal/propose/rls_test.go` connecting as the worker role with pgx
 
 **Done when:** Test fails the build if those inserts succeed; currently fails closed (permission denied).
 
@@ -472,7 +477,7 @@ GitHub App JWT → installation token; PEM from Vault — **verify** Vault API f
 
 **Goal:** Automated proofs for the interview demo.
 
-**Files:** `worker/tests/` or `supabase/tests/` (pgTAP if you use it — **verify**)
+**Files:** `worker/internal/...` Go tests or `supabase/tests/` (pgTAP if you use it — **verify**)
 
 **Cases:**
 1. Update `payload` in SQL; `approve_action` with old hash → refused; no comment.
@@ -514,9 +519,9 @@ GitHub App JWT → installation token; PEM from Vault — **verify** Vault API f
 
 **Goal:** Rubric JSON for area/label + must-not-say.
 
-**Files:** `evals/golden/*.json`, `evals/score.py` (or TS)
+**Files:** `evals/golden/*.json`, `worker/cmd/evalscore/main.go` (reuses `internal/llm` and `internal/agentconfig`)
 
-**Done when:** `uv run python evals/score.py --dry-run` loads all fixtures without error.
+**Done when:** `cd worker && go run ./cmd/evalscore -dry-run ../evals/golden` loads all fixtures without error.
 
 **Commit:** `feat(w3.1): golden issue fixtures and scorer stub`
 
@@ -542,7 +547,7 @@ GitHub App JWT → installation token; PEM from Vault — **verify** Vault API f
 
 **Goal:** Worker refuses draft agents when hashes diverge.
 
-**Files:** `worker/src/tierbound_worker/main.py`, migration seed
+**Files:** `worker/internal/propose/propose.go` (activation check), migration seed
 
 **Done when:** Unit test: mismatched hashes → no `proposed_action`; matching → proposes.
 
@@ -594,7 +599,7 @@ GitHub App JWT → installation token; PEM from Vault — **verify** Vault API f
 | Phase | Default tests |
 | --- | --- |
 | W0 | Manual smoke (`supabase status`, hash stability) |
-| W1 | SQL assertions + pytest for hashing/idempotency; one integration path issue→propose |
+| W1 | SQL assertions + `go test` for hashing/idempotency; one integration path issue→propose |
 | W2 | HTTP tests for MCP 401/metadata; integration approve→comment; RLS denial |
 | W3 | Offline golden scoring; CI job on fixture PR; fault-injection for effector |
 

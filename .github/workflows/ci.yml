@@ -18,9 +18,14 @@ jobs:
           version: 10
       - name: Install JS deps
         run: pnpm install --frozen-lockfile
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: worker/go.mod
+          cache-dependency-path: worker/go.sum
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # Python is only here to run pre-commit itself.
       - name: Install pre-commit
         run: pip install pre-commit
       - name: Run pre-commit

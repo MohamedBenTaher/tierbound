@@ -12,17 +12,15 @@ repos:
         args: [--maxkb=500]
       - id: detect-private-key
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.3
-    hooks:
-      - id: ruff
-        args: [--fix]
-        files: ^worker/
-      - id: ruff-format
-        files: ^worker/
-
   - repo: local
     hooks:
+      - id: go-checks
+        name: go-checks (gofmt, vet, golangci-lint, test)
+        entry: scripts/go-checks.sh
+        language: system
+        pass_filenames: false
+        files: ^worker/.*(\.go|go\.mod|go\.sum|\.golangci\.yml)$
+
       - id: fallow-audit
         name: fallow-audit
         entry: scripts/fallow-audit-hook.sh

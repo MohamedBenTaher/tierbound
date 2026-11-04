@@ -18,7 +18,7 @@ docs/IMPLEMENTATION_PLAN.md  numbered steps with done-when checks
 docs/PSTACK.md               vendored pstack note
 supabase/migrations/         Postgres schema, roles, RLS, pgmq
 supabase/functions/          ingest, mcp, effect-github-comment
-worker/                      Python pgmq consumer (uv package)
+worker/                      Go pgmq consumer (module github.com/MohamedBenTaher/tierbound/worker)
 evals/                       golden set + CI gate
 docs/postmortems/            incident writeups
 runbooks/                    operator runbooks
@@ -30,9 +30,9 @@ runbooks/                    operator runbooks
 
 - **Plan first:** follow `docs/IMPLEMENTATION_PLAN.md` step ids. Do not invent parallel tracks.
 - **Supabase local:** `supabase start` only when a plan step asks for it (Weekend 0+). Apply migrations with `supabase db reset` or `supabase migration up`.
-- **Worker:** `cd worker && uv sync && uv run pytest` (once tests exist).
+- **Worker:** `cd worker && go test ./... && go run ./cmd/worker`. Lint with `go tool golangci-lint run ./...` (pinned in `go.mod`). Code lives under `cmd/` and `internal/`; no exported packages.
 - **Edge Functions:** `supabase functions serve <name>` against local stack.
-- **Lint / format:** pre-commit runs fallow (TS/JS), ruff (Python under `worker/`), and hygiene hooks. Use `pre-commit run --all-files` before pushing a commit.
+- **Lint / format:** pre-commit runs fallow (TS/JS), gofmt + go vet + golangci-lint + go test (`scripts/go-checks.sh`, Go under `worker/`), and hygiene hooks. Use `pre-commit run --all-files` before pushing a commit.
 - **Never** bypass hooks with `--no-verify` unless the human explicitly says to.
 
 ## Commits and PRs

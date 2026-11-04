@@ -38,7 +38,7 @@
 - One repo (my own)
 - Two tiers: `read` (fetch issues only) and `draft` (propose; needs approval to take effect)
 - Supabase: Postgres, RLS, Auth OAuth 2.1, Queues (pgmq), Edge Functions, Vault, DB webhooks
-- Python worker
+- Go worker
 - GitHub Action eval gate
 - One injected failure + postmortem
 - README with architecture diagram + 45-second demo video
@@ -66,7 +66,7 @@ When an issue is opened on my repo, `triage-drafter` drafts **one** comment: a s
 flowchart LR
   GH[GitHub issue opened] -->|webhook| ING[Edge fn: ingest<br/>verify signature]
   ING -->|enqueue| Q[(pgmq: jobs)]
-  Q --> W[Python worker<br/>read-only GH token]
+  Q --> W[Go worker<br/>read-only GH token]
   W -->|insert| RUNS[(runs)]
   W -->|insert| PA[(proposed_actions<br/>payload + sha256)]
   CUR[Cursor / MCP client] -->|OAuth 2.1| MCP[Edge fn: mcp]
@@ -119,7 +119,8 @@ One pgmq queue: `jobs`.
   4. Post the comment with the GitHub App key from Vault.
   5. Store `external_id`, set status `posted`, mark the action `executed`.
 
-### Python worker
+### Go worker
+- Single static binary (`worker/cmd/worker`), pgx for Postgres, `context` deadlines on every LLM and GitHub call.
 - Reads pgmq with a visibility timeout so crashed jobs reappear and retry.
 - Writes a `runs` row per attempt.
 - Fetches the issue (read-only token), calls the LLM, writes one `proposed_action` with `idempotency_key = agent_id:repo:issue:config_hash`. Duplicate retries hit the unique key → no second action.
@@ -159,7 +160,7 @@ Write it up as `docs/postmortem-001.md` (timeline, impact, root cause, fix, test
 ### Weekend 1: durable pipeline
 - [ ] Migrations: 5 tables, pgmq `jobs`, roles, RLS policies
 - [ ] `ingest` edge function with signature verification
-- [ ] Python worker: pgmq read with visibility timeout, `runs` ledger, `proposed_actions` with idempotency key
+- [ ] Go worker: pgmq read with visibility timeout, `runs` ledger, `proposed_actions` with idempotency key
 - **Done when:**
   - [ ] Opening an issue produces a `proposed_action` within 30s
   - [ ] `kill -9` the worker mid-run → the job retries, still exactly one action

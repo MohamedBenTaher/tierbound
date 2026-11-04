@@ -1,15 +1,12 @@
-# Python
+# Go
+/worker/bin/
+*.test
+coverage.out
+
+# pre-commit / misc Python tooling
 __pycache__/
-*.py[cod]
-*$py.class
-*.egg-info/
 .venv/
-venv/
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
-.coverage
-htmlcov/
+
 dist/
 build/
 

@@ -15,7 +15,7 @@ A Supabase-native runner where an agent can **propose** an outside action but ne
 
 ```
 supabase/          migrations + Edge Functions (ingest, mcp, effect-github-comment)
-worker/            Python pgmq consumer (read-only GitHub token)
+worker/            Go pgmq consumer (read-only GitHub token)
 evals/             golden issue set + CI gate
 docs/postmortems/  incident writeups
 runbooks/          operator runbooks
