@@ -410,3 +410,9 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 [functions.ingest]
 # GitHub webhooks carry no JWT; authenticity comes from the HMAC signature.
 verify_jwt = false
+
+[functions.mcp]
+# The MCP function verifies user tokens itself (withSupabase middleware); the
+# gateway must pass unauthenticated discovery through or OAuth clients can
+# never start (plan step 2.2).
+verify_jwt = false
