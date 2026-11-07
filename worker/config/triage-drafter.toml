@@ -1,0 +1,14 @@
+# triage-drafter agent config. Plan step 0.4.
+# config_hash covers exactly: prompt content, model, tool_grant, tier (SPEC section 5).
+# Changing anything below changes the hash and re-runs the eval gate.
+
+name = "triage-drafter"
+tier = "draft"
+
+# Groq model id for gpt-oss-20b. Verify it resolves on the first LLM call (plan step 1.4).
+model = "openai/gpt-oss-20b"
+
+# Resolved relative to this file.
+prompt_path = "prompts/triage-drafter.md"
+
+tool_grant = ["github.read_issues"]
