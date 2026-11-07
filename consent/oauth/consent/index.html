@@ -1,0 +1,87 @@
+<!-- tierbound OAuth consent stub (plan step 2.1). Throwaway, not a product UI.
+     Serve with: python3 -m http.server 3000 --directory consent
+     Auth redirects here with ?authorization_id=... -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>tierbound consent</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 32rem; margin: 4rem auto; padding: 0 1rem; }
+  button { font: inherit; padding: .5rem 1rem; margin-right: .5rem; cursor: pointer; }
+  .card { border: 1px solid #ccc; border-radius: 8px; padding: 1.5rem; }
+  code { background: #f2f2f2; padding: 0 .25rem; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Authorize</h1>
+  <p id="status">Loading…</p>
+  <div id="details" hidden>
+    <p><strong id="client"></strong> requests scopes: <code id="scopes"></code></p>
+    <button id="approve">Approve</button>
+    <button id="deny">Deny</button>
+  </div>
+  <div id="signin" hidden>
+    <p>Sign in to continue (local dev account):</p>
+    <input id="email" type="email" placeholder="email"><br><br>
+    <input id="password" type="password" placeholder="password"><br><br>
+    <button id="do-signin">Sign in / Sign up</button>
+  </div>
+</div>
+<script type="module">
+// Local dev defaults from `supabase status`; replace for any real deployment.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+const supabase = createClient(
+  "http://127.0.0.1:54321",
+  "eyJhbGciOiJFUzI1NiIsImtpZCI6ImVjMDkzYWFlLTQ3MjItNDdmZS1hYWJjLTUzYmJkNjYxMGE2NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjIxMDk0Mzk0OTN9.FhyLhPBgVPnfgmgyA3yPLX2OBoXnRHOhQ_uInW_l9smq3i4EKhdtewTz687KMzzVpDQ0m9JAcxUyTpJ3sglZNw",
+);
+
+const authorizationId = new URLSearchParams(location.search).get("authorization_id");
+const $ = (id) => document.getElementById(id);
+
+async function init() {
+  if (!authorizationId) {
+    $("status").textContent = "No authorization_id in the URL.";
+    return;
+  }
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    $("status").textContent = "Sign in required.";
+    $("signin").hidden = false;
+    return;
+  }
+  const { data, error } = await supabase.auth.oauth.getAuthorizationDetails(authorizationId);
+  if (error) {
+    $("status").textContent = "Could not load authorization: " + error.message;
+    return;
+  }
+  $("status").textContent = "A client wants to act on your behalf.";
+  $("client").textContent = data.client_name ?? data.client_id;
+  $("scopes").textContent = data.scope ?? "(none)";
+  $("details").hidden = false;
+}
+
+async function decide(fn) {
+  const { data, error } = await fn(authorizationId);
+  if (error) {
+    $("status").textContent = "Failed: " + error.message;
+    return;
+  }
+  location.assign(data.redirect_url);
+}
+
+$("do-signin").addEventListener("click", async () => {
+  const email = $("email").value, password = $("password").value;
+  let { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) ({ error } = await supabase.auth.signUp({ email, password }));
+  if (error) { $("status").textContent = "Sign-in failed: " + error.message; return; }
+  location.reload();
+});
+$("approve").addEventListener("click", () => decide((id) => supabase.auth.oauth.approveAuthorization(id)));
+$("deny").addEventListener("click", () => decide((id) => supabase.auth.oauth.denyAuthorization(id)));
+
+init();
+</script>
+</body>
+</html>

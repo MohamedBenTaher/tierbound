@@ -35,3 +35,4 @@ Thumbs.db
 *.key
 secrets/
 .fallow/
+supabase/signing_keys.json
