@@ -51,7 +51,7 @@ cp .env.example .env   # fill later from `supabase status`
 git status
 ```
 
-**Notes:** Keep real keys out of git. GitHub App private key goes in Supabase Vault later, not in `.env`.
+**Notes:** Keep real keys out of git. GitHub App private key becomes an Edge Function secret in step 2.3 (not Vault: the effector role has no Vault access); keep it out of git.
 
 **Done when:** `.env` exists locally, is gitignored, and `git check-ignore -v .env` prints a rule.
 
@@ -451,8 +451,14 @@ And after OAuth from Cursor: `list_pending_actions` returns the W1 draft.
 **Goal:** Approval triggers exactly-once post.
 
 **Files:**
-- `supabase/functions/effect-github-comment/index.ts`
-- migration or dashboard config for Database Webhook on `approvals` insert — **verify** local DB webhook → Edge Function wiring (`supabase/config.toml` or `pg_net`)
+- `supabase/functions/effect-github-comment/index.ts` (protocol), `github.ts` (GitHub App client)
+- `supabase/migrations/20261111170000_effector_webhook.sql` (pg_net trigger on `approvals` insert)
+- `supabase/seed.sql` (local Vault entries), `supabase/config.toml` (`verify_jwt = false`)
+- `worker/internal/e2e/` (fake GitHub + end-to-end tests), `scripts/test-effector.sh`
+
+**Webhook wiring (verified locally, CLI v3.0.0, 2026-11-11):** Supabase docs' "call an Edge Function from a migration" pattern: an `after insert … when (new.decision = 'approved')` trigger whose `security definer` function reads `tierbound_functions_url` and `tierbound_effector_webhook_secret` from Vault and calls `net.http_post` (pg_net, async after commit). The body carries only `action_id`; the effector re-reads everything as `tierbound_effector`. Locally the URL is `http://host.docker.internal:54321` (seeded). Hosted: create both Vault entries once per project, outside migrations — **verify** on the hosted project.
+
+**Secrets choice:** the GitHub App PEM is an **Edge Function secret** (`GITHUB_APP_PRIVATE_KEY`, one line with `\n`), not a Vault entry: the effector connects as the restricted `tierbound_effector` role, which has no Vault access, and function secrets load locally via `supabase functions serve --env-file` (verified) and hosted via `supabase secrets set`. Other effector secrets: `EFFECTOR_DATABASE_URL` (locally `…@db:5432` — the container name `supabase_db_tierbound` failed DNS (ENOTFOUND) inside the runtime), `EFFECTOR_WEBHOOK_SECRET`, `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, optional `GITHUB_API_URL` (injectable; tests use a fake), `GITHUB_TIMEOUT_MS`, `EFFECT_LEASE_SECONDS`.
 
 **Claim pattern:**
 ```sql
@@ -461,13 +467,30 @@ values ($1, 'claimed', 1)
 on conflict (action_id) do nothing
 returning *;
 ```
-If `RETURNING` empty: load existing row; if `status = 'posted'` → no-op; if `claimed`/`failed` and `external_id is null` → retry path.
+If `RETURNING` is empty, the **only** way in is one atomic takeover, and only when no live invocation holds the claim:
+```sql
+update public.effects
+set status = 'claimed', claimed_at = now(), attempts = attempts + 1, last_error = null
+where action_id = $1 and external_id is null
+  and (status = 'failed' or (status = 'claimed' and claimed_at < now() - <lease>))
+returning attempts;
+```
+Otherwise `posted` → no-op (`already_posted`), live claim → `busy` (409). The plan's first draft let any invocation retry a `claimed` row; the verify-effector-claim TLA+ model found that two overlapping invocations both post (finding F1), and a scratch revert to that rule posted 9 comments in `TestConcurrentInvocationsPostOnce`. `attempts` is a fencing token: `record`/`fail` only update the row while `attempts` still equals the holder's value. The holder refuses to post once it is within one GitHub timeout of its lease.
 
-Before post on retry: search issue comments for `<!-- tierbound:$action_id -->`. On success set `external_id`, `status='posted'`, `executed_at=now()`, action status `executed`.
+Before post on takeover: search issue comments for `<!-- tierbound:$action_id -->`; a hit is recorded instead of posted. On success set `external_id`, `status='posted'`, `executed_at=now()`, action status `executed` (one transaction).
 
-GitHub App JWT → installation token; PEM from Vault — **verify** Vault API from Edge Functions (`supabase vault` / secrets).
+Hash binding: the effector recomputes sha256 of the canonical `payload` (never the `payload_hash` column), requires `approvals.decision = 'approved'` with that exact hash, and posts the `payload.body` it just verified plus the marker.
 
-**Done when:** Approving via MCP creates one GitHub comment; second call to effector leaves comment count unchanged.
+GitHub App JWT (RS256, PKCS#1 PEM wrapped to PKCS#8 for WebCrypto) → installation token → post. The fake GitHub in the tests verifies the JWT signature against the generated key.
+
+**Done when:**
+```bash
+supabase start && supabase migration up   # or supabase db reset
+scripts/test-effector.sh -run 'Approval|Concurrent|Timeout|Crash'
+```
+Green: approve → exactly one comment (webhook path); 8 concurrent invocations + the webhook → one comment; GitHub timeout-after-success → retry records the existing comment; crash between post and record → `busy` while the lease is live, then the takeover records it. Fake GitHub counts POSTs.
+
+**Pending — verify:** a real comment on GitHub needs the App from step 0.3 (App ID, installation id, PEM as function secrets). Until then the post is proven only against the fake. "Approving via MCP from Cursor" is step 2.5 (2.4 approves through the MCP function with a password-grant token).
 
 **Commit:** `feat(w2.3): effector claims uniquely and posts once`
 
@@ -611,8 +634,8 @@ Prefer behavior over mocks: hit local Supabase whenever the step touches Postgre
 
 1. **Local JWT signing keys (ES256/RS256)** — required by `@supabase/server` `withSupabase({ auth: 'user' })`; legacy HS256 is rejected. Confirm local CLI path to asymmetric keys.
 2. **CLI version** — BYO MCP docs want ≥ 2.117.0 for function slug injection; machine currently has 2.98.2.
-3. **DB webhooks → Edge Function on local** — confirm `supabase_functions.http_request` / dashboard equivalent works offline; fallback: call effector directly from MCP approve tool in dev only (do not keep that shortcut in prod design).
-4. **Vault from Edge Functions** — confirm reading GitHub App PEM via Vault vs `supabase secrets` for v1; pick one and document.
+3. **DB webhooks → Edge Function on local** — resolved in step 2.3: pg_net trigger reading the URL + secret from Vault works locally (`host.docker.internal:54321`).
+4. **Vault from Edge Functions** — resolved in step 2.3: PEM is an Edge Function secret (the effector role has no Vault access); Vault holds only the webhook URL + shared secret.
 5. **Consent page hosting** — OAuth needs a real Site URL; plan a minimal consent app without turning it into a product dashboard.
 6. **pgmq extension on hosted free tier / local image** — already documented for recent Postgres images; re-check if `create extension pgmq` fails.
 7. **Cursor MCP OAuth** — client must support OAuth 2.1 + dynamic registration against Supabase; if Cursor build lags, use MCP Inspector for demos (**verify** current Cursor MCP auth support).

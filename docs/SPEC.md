@@ -72,7 +72,7 @@ flowchart LR
   CUR[Cursor / MCP client] -->|OAuth 2.1| MCP[Edge fn: mcp]
   MCP -->|list / get| PA
   MCP -->|approve hash| AP[(approvals)]
-  AP -->|DB webhook| EFF[Edge fn: effect-github-comment<br/>GitHub App key in Vault]
+  AP -->|DB webhook| EFF[Edge fn: effect-github-comment<br/>GitHub App key as function secret]
   EFF -->|claim, unique| EF[(effects)]
   EFF -->|post comment| GH
 ```
@@ -96,7 +96,7 @@ One pgmq queue: `jobs`.
 ### Roles & RLS
 - **worker role:** INSERT on `runs`, `proposed_actions` only. No access to `approvals` or `effects`. GitHub token is read-only.
 - **approver (authenticated user):** via MCP only; can write `approvals` for actions they own (RLS on owner).
-- **effector role:** the only role that can write `effects`; holds the GitHub App key via Vault.
+- **effector role:** the only role that can write `effects`; holds the GitHub App key as an Edge Function secret (Vault holds the webhook URL + shared secret).
 - Everything RLS-scoped to `owner`.
 - An agent whose tier is `draft` won't run unless `evals_passed_hash = config_hash`.
 
@@ -115,8 +115,8 @@ One pgmq queue: `jobs`.
 - **`effect-github-comment`**: fired by a DB webhook on approval.
   1. Recompute sha256 of the canonical payload.
   2. Require an approved `approvals` row with matching hash.
-  3. Claim: insert into `effects` (unique on action_id; first writer wins). If the claim exists with status `posted` → no-op. If `claimed`/`failed` with no `external_id` → allowed to retry (see failure mode below).
-  4. Post the comment with the GitHub App key from Vault.
+  3. Claim: insert into `effects` (unique on action_id; first writer wins). If the claim exists with status `posted` → no-op. If `failed`, or `claimed` with an **expired lease**, and no `external_id` → one atomic `UPDATE … RETURNING` takes it over to retry (see failure mode below). A live claim is never taken over, so two overlapping invocations cannot both post.
+  4. Post the comment with the GitHub App key (an Edge Function secret).
   5. Store `external_id`, set status `posted`, mark the action `executed`.
 
 ### Go worker
@@ -136,7 +136,7 @@ One pgmq queue: `jobs`.
 ## 7. Known failure mode → the postmortem
 
 **GitHub returns 500 after the effector has claimed the action.** A naive design leaves an `effects` row with no comment, and a retry skips it forever.
-**Fix:** `effects.status` + `external_id`. Retry only rows that are `claimed`/`failed` and have no `external_id`; before posting on retry, check GitHub for an existing comment carrying a hidden marker (`<!-- tierbound:action_id -->`) so a timeout-after-success doesn't double post.
+**Fix:** `effects.status` + `external_id`. Retry only rows that are `failed` (or `claimed` past their lease) and have no `external_id`; before posting on retry, check GitHub for an existing comment carrying a hidden marker (`<!-- tierbound:action_id -->`) so a timeout-after-success doesn't double post.
 Write it up as `docs/postmortem-001.md` (timeline, impact, root cause, fix, test added) plus `runbooks/effect-stuck.md`.
 
 ---
@@ -154,7 +154,7 @@ Write it up as `docs/postmortem-001.md` (timeline, impact, root cause, fix, test
 
 ### Weekend 0 (one evening): setup
 - [ ] Create repo `tierbound` (MIT), Supabase CLI local stack, `make dev`
-- [ ] Register a GitHub App on the test repo (issues read, issue comments write), store key in Supabase Vault
+- [ ] Register a GitHub App on the test repo (issues read, issue comments write), store key as an Edge Function secret
 - [ ] Pick the LLM (reuse Groq gpt-oss-20b from citibench) and pin it in config
 
 ### Weekend 1: durable pipeline

@@ -416,3 +416,8 @@ verify_jwt = false
 # gateway must pass unauthenticated discovery through or OAuth clients can
 # never start (plan step 2.2).
 verify_jwt = false
+
+[functions.effect-github-comment]
+# Called by the approvals trigger via pg_net, which carries no user JWT;
+# the function checks x-tierbound-webhook-secret itself (plan step 2.3).
+verify_jwt = false

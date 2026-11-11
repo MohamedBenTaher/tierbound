@@ -94,7 +94,10 @@ async function recordDecision(
   const { error: updErr } = await supabase
     .from("proposed_actions")
     .update({ status: decision.verdict })
-    .eq("id", decision.action_id);
+    .eq("id", decision.action_id)
+    // The approval insert already fired the effector (async); never overwrite
+    // an 'executed' it may have recorded first.
+    .eq("status", "proposed");
   return updErr ? updErr.message : null;
 }
 

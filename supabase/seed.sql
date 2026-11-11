@@ -19,3 +19,11 @@ values ('00000000-0000-0000-0000-000000000001', 'triage-drafter', 'draft',
   on conflict (owner, name) do update
     set config_hash = excluded.config_hash,
         evals_passed_hash = excluded.evals_passed_hash;
+
+-- Effector webhook wiring (plan step 2.3, migration effector_webhook). The
+-- database container reaches the host's API gateway via host.docker.internal
+-- (Supabase docs, Database Webhooks > Local development). The secret is
+-- local-only, like the role passwords above; the function reads the same
+-- value from EFFECTOR_WEBHOOK_SECRET.
+select vault.create_secret('http://host.docker.internal:54321', 'tierbound_functions_url');
+select vault.create_secret('tierbound-local-only', 'tierbound_effector_webhook_secret');
