@@ -500,14 +500,20 @@ Green: approve → exactly one comment (webhook path); 8 concurrent invocations 
 
 **Goal:** Automated proofs for the interview demo.
 
-**Files:** `worker/internal/...` Go tests or `supabase/tests/` (pgTAP if you use it — **verify**)
+**Files:** `worker/internal/e2e/tamper_test.go`, `worker/internal/e2e/mcp_test.go` (Go tests against local Supabase; pgTAP not used — the cases need the Edge Functions and the webhook, not just SQL), `supabase/migrations/20261111171000_approvals_insert_once.sql`
 
 **Cases:**
-1. Update `payload` in SQL; `approve_action` with old hash → refused; no comment.
-2. Force-insert approval with wrong hash; effector refuses.
-3. As worker role, `insert into effects` → denied (commitment stand-in).
+1. Update `payload` in SQL; `approve_action` (real MCP call with a signed-in user's token) with the old hash → refused, no approvals row, effector refuses, no comment. Control: an untampered action approved the same way posts exactly one comment.
+2. Force-insert approval with wrong hash; effector refuses (webhook gets 403, no `effects` row, no comment) — both an unrelated hash and the **stale column hash** left by a tamper.
+3. As the worker's own login (`WORKER_DATABASE_URL`, not `set role`), `insert into effects` / `update effects` / `insert into approvals` → denied (42501).
+4. (Added) The owner cannot PATCH or DELETE an approval through PostgREST. This failed first: the 1.2 `owner_approvals` policy was `for all`; the migration above makes approvals insert-once (select + insert policies, update/delete revoked).
 
-**Done when:** All three are automated and green against local Supabase.
+**Done when:**
+```bash
+supabase start && supabase migration up   # or supabase db reset
+scripts/test-effector.sh                  # all 2.3 + 2.4 cases
+```
+All green against local Supabase (verified 2026-11-11). Without the env the script sets, the tests skip, so pre-commit stays green.
 
 **Commit:** `test(w2.4): hash tamper and RLS commitment denial`
 

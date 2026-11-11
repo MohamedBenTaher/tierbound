@@ -192,6 +192,29 @@ func (h harness) actionStatus(t *testing.T, a action) string {
 	return s
 }
 
+// webhookResponses returns the HTTP statuses pg_net recorded for effector
+// calls about this action (the function echoes the action id in its body).
+func (h harness) webhookResponses(t *testing.T, a action) []int {
+	t.Helper()
+	rows, err := h.db.Query(context.Background(),
+		`select status_code from net._http_response where content like '%' || $1 || '%' order by id`, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var out []int
+	for rows.Next() {
+		var code *int
+		if err := rows.Scan(&code); err != nil {
+			t.Fatal(err)
+		}
+		if code != nil {
+			out = append(out, *code)
+		}
+	}
+	return out
+}
+
 func waitFor(t *testing.T, what string, timeout time.Duration, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -226,7 +249,7 @@ func (h harness) tryInvoke(a action) (invokeResult, error) {
 		return invokeResult{}, err
 	}
 	headers := map[string]string{"x-tierbound-webhook-secret": h.webhookSecret}
-	status, raw, err := h.post("/functions/v1/effect-github-comment", headers, body)
+	status, raw, err := h.request(http.MethodPost, "/functions/v1/effect-github-comment", headers, body)
 	if err != nil {
 		return invokeResult{}, err
 	}
@@ -238,10 +261,10 @@ func (h harness) tryInvoke(a action) (invokeResult, error) {
 	return res, nil
 }
 
-func (h harness) post(path string, headers map[string]string, body []byte) (int, []byte, error) {
+func (h harness) request(method, path string, headers map[string]string, body []byte) (int, []byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.supabaseURL+path, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, method, h.supabaseURL+path, bytes.NewReader(body))
 	if err != nil {
 		return 0, nil, err
 	}
