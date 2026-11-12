@@ -96,13 +96,21 @@ new issue to get a fresh job.
 Generate a new key on the App settings page, delete the old one, overwrite
 `github-app.pem`, regenerate `hosted-functions.env`, re-run step 4.
 
-## Verified on hosted (2026-11-12)
+## Verified on hosted (2026-11-12, end to end)
 
 - Issue opened -> App delivery `issues.opened` -> `ingest` 200 -> one
   `webhook_deliveries` row and one `pgmq.q_jobs` message.
-- Worker reads the issue with the scoped installation token.
-- Not yet: LLM draft -> `proposed_action` (needs `GROQ_API_KEY`), approval
-  over MCP, the approvals trigger -> `effect-github-comment` -> comment.
+- Worker (scoped installation token, Groq) -> run `succeeded` ->
+  proposed_action `30963402-3754-4b3a-8de9-49653f3b09bf`, tier `draft`,
+  `payload_hash` = SQL recomputation.
+- Approved from Cursor over the hosted MCP server after OAuth consent
+  (approver `mbentaher1998@gmail.com`), 13:14:43.594 UTC; `approvals` row
+  bound to the stored hash.
+- Approvals trigger -> pg_net -> `effect-github-comment` -> HTTP 200
+  `outcome: posted`; `effects` `posted`, `attempts = 1`, claimed 13:14:44.533,
+  posted 13:14:45.502 (about 1.9 s after the decision); action `executed`.
+- Exactly one comment, by `tierbound-mbt[bot]`, ending with the marker:
+  <https://github.com/MohamedBenTaher/tierbound/issues/1#issuecomment-6824619706>.
 
 ## Test guide: approve from Cursor
 
