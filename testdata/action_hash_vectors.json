@@ -1,0 +1,102 @@
+{
+  "description": "Golden vectors for payload_hash = sha256(canonical JSON of {kind, target, payload}). Read by worker/internal/hashing (Go) and worker/internal/e2e via the mcp function's get_action.recomputed_hash (TypeScript). Change only together with both implementations.",
+  "vectors": [
+    {
+      "name": "plain comment",
+      "kind": "github_comment",
+      "target": {
+        "repo": "MohamedBenTaher/tierbound",
+        "issue_number": 7
+      },
+      "payload": {
+        "body": "Summary: it breaks.\nLikely area: worker.\nSuggested label: bug"
+      },
+      "canonical": "{\"kind\":\"github_comment\",\"payload\":{\"body\":\"Summary: it breaks.\\nLikely area: worker.\\nSuggested label: bug\"},\"target\":{\"issue_number\":7,\"repo\":\"MohamedBenTaher/tierbound\"}}",
+      "sha256": "259519ca540124aa558b44778cd7cb862431bc608a347dbebf94b2fd5a294cef"
+    },
+    {
+      "name": "same body, other issue",
+      "kind": "github_comment",
+      "target": {
+        "repo": "MohamedBenTaher/tierbound",
+        "issue_number": 8
+      },
+      "payload": {
+        "body": "Summary: it breaks.\nLikely area: worker.\nSuggested label: bug"
+      },
+      "canonical": "{\"kind\":\"github_comment\",\"payload\":{\"body\":\"Summary: it breaks.\\nLikely area: worker.\\nSuggested label: bug\"},\"target\":{\"issue_number\":8,\"repo\":\"MohamedBenTaher/tierbound\"}}",
+      "sha256": "fcb152d4d9a662fcb99c6dd172713dc3024c4bee0de48b49558bb023c31567a5"
+    },
+    {
+      "name": "same body, other repo",
+      "kind": "github_comment",
+      "target": {
+        "repo": "MohamedBenTaher/fable",
+        "issue_number": 7
+      },
+      "payload": {
+        "body": "Summary: it breaks.\nLikely area: worker.\nSuggested label: bug"
+      },
+      "canonical": "{\"kind\":\"github_comment\",\"payload\":{\"body\":\"Summary: it breaks.\\nLikely area: worker.\\nSuggested label: bug\"},\"target\":{\"issue_number\":7,\"repo\":\"MohamedBenTaher/fable\"}}",
+      "sha256": "e36e8a19d2359ad2e7cf8300b1849c4690345785a858c4bd2cb6ff8bc781e0fe"
+    },
+    {
+      "name": "html, quotes and backslash",
+      "kind": "github_comment",
+      "target": {
+        "repo": "o/r",
+        "issue_number": 1
+      },
+      "payload": {
+        "body": "<a href=\"x\"> & 'q' \\ done"
+      },
+      "canonical": "{\"kind\":\"github_comment\",\"payload\":{\"body\":\"<a href=\\\"x\\\"> & 'q' \\\\ done\"},\"target\":{\"issue_number\":1,\"repo\":\"o/r\"}}",
+      "sha256": "22a23025f07b840300151faa526cb3f7bcc521e3ead44313cfe174d2febe5426"
+    },
+    {
+      "name": "shortcut and control escapes",
+      "kind": "github_comment",
+      "target": {
+        "repo": "o/r",
+        "issue_number": 2
+      },
+      "payload": {
+        "body": "\b\f\n\r\t\u0001\u001f"
+      },
+      "canonical": "{\"kind\":\"github_comment\",\"payload\":{\"body\":\"\\b\\f\\n\\r\\t\\u0001\\u001f\"},\"target\":{\"issue_number\":2,\"repo\":\"o/r\"}}",
+      "sha256": "1cf875c1c617de45ac008246e685f198c4c81d633430b5f23fbca7c21530ef68"
+    },
+    {
+      "name": "non-ascii, emoji and U+2028 stay raw",
+      "kind": "github_comment",
+      "target": {
+        "repo": "o/r",
+        "issue_number": 3
+      },
+      "payload": {
+        "body": "café 🚀   مرحبا"
+      },
+      "canonical": "{\"kind\":\"github_comment\",\"payload\":{\"body\":\"café 🚀   مرحبا\"},\"target\":{\"issue_number\":3,\"repo\":\"o/r\"}}",
+      "sha256": "d30d293a50d4306b502126fe3891dd9e10691cdb55261ffcf8788c0b459c85c6"
+    },
+    {
+      "name": "large issue number and extra payload keys",
+      "kind": "github_comment",
+      "target": {
+        "repo": "o.r-1/x_y",
+        "issue_number": 2147483647
+      },
+      "payload": {
+        "body": "b",
+        "labels": [
+          "bug",
+          "area:worker"
+        ],
+        "draft": true,
+        "note": null
+      },
+      "canonical": "{\"kind\":\"github_comment\",\"payload\":{\"body\":\"b\",\"draft\":true,\"labels\":[\"bug\",\"area:worker\"],\"note\":null},\"target\":{\"issue_number\":2147483647,\"repo\":\"o.r-1/x_y\"}}",
+      "sha256": "7adc1de8b0ef720013ede17468fc1df37c5032df5804eaf0bd8afd40bed248c7"
+    }
+  ]
+}

@@ -5,9 +5,10 @@
 // id and re-reads everything from Postgres as tierbound_effector.
 //
 // Protocol (SPEC section 6, AGENTS.md invariants 2 and 3):
-//   1. verify  - recompute sha256 of the canonical payload; require an
-//                approved approvals row whose payload_hash equals it. The
-//                body checked here is the exact body posted (no re-read).
+//   1. verify  - recompute sha256 of the canonical {kind, target, payload}
+//                envelope; require an approved approvals row whose
+//                payload_hash equals it. The body and target checked here
+//                are exactly what is posted, and where (no re-read).
 //   2. claim   - INSERT ... ON CONFLICT (action_id) DO NOTHING RETURNING;
 //                the winner owns the effect.
 //   3. takeover- otherwise one atomic UPDATE ... RETURNING may take the row
@@ -21,7 +22,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import postgres from "npm:postgres@3.4.7";
 
-import { canonicalHash } from "../_shared/canonical.ts";
+import { actionHash } from "../_shared/canonical.ts";
 import { appFromEnv, type GitHubApp, markerFor, type Target, timeoutMsFromEnv } from "./github.ts";
 
 type Sql = ReturnType<typeof postgres>;
@@ -99,16 +100,17 @@ type Verified = { ok: true; target: Target; body: string } | { ok: false; error:
 
 async function verify(sql: Sql, actionId: string): Promise<Verified> {
   const [action] = await sql`
-    select target, payload from public.proposed_actions where id = ${actionId}`;
+    select kind, target, payload from public.proposed_actions where id = ${actionId}`;
   if (!action) return { ok: false, error: "no such action" };
+  if (action.kind !== "github_comment") return { ok: false, error: `unsupported kind ${action.kind}` };
   const [approval] = await sql`
     select decision, payload_hash from public.approvals where action_id = ${actionId}`;
   if (approval?.decision !== "approved") return { ok: false, error: "no approved approvals row" };
   // Recompute; never trust the proposed_actions.payload_hash column (it goes
-  // stale when the payload is edited in SQL).
-  const recomputed = await canonicalHash(action.payload);
+  // stale when kind, target, or payload is edited in SQL).
+  const recomputed = await actionHash(action);
   if (approval.payload_hash !== recomputed) {
-    return { ok: false, error: "approved payload_hash does not match the canonical payload" };
+    return { ok: false, error: "approved payload_hash does not match the action's kind/target/payload" };
   }
   const body = action.payload?.body;
   if (typeof body !== "string" || body.length === 0) return { ok: false, error: "payload.body missing" };

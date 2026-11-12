@@ -330,7 +330,7 @@ select pgmq.archive('jobs', $1);
 select pgmq.set_vt('jobs', $1, 120);
 ```
 - Use `pgxpool` with `WORKER_DATABASE_URL`; one goroutine per job is fine but cap concurrency at 1 for v1 so retries are easy to reason about.
-- Canonical payload hash: `hashing.Canonical(payload)` where payload is a `map[string]any` (encoding/json sorts map keys, compact output). Never hash a struct whose field order could change silently.
+- Canonical action hash (`payload_hash`): `hashing.ActionHash(kind, target, payload)` = `hashing.Canonical({kind, target, payload})` (changed from payload-only after 2.4; see "Hash scope" under step 2.4), maps of `map[string]any` (encoding/json sorts map keys, compact output). Never hash a struct whose field order could change silently.
 - `idempotency_key = fmt.Sprintf("%s:%s:%d:%s", agentID, repo, issueNumber, configHash)`.
 - On unique violation (`pgconn.PgError` code `23505`, checked with `errors.As`), treat as success and archive the message.
 - Refuse to run if agent.tier == `draft` and `evals_passed_hash != config_hash` (can soft-skip until W3 by seeding equal hashes in seed SQL).
@@ -420,7 +420,7 @@ verify_jwt = false   # middleware verifies; discovery must stay public
 | --- | --- | --- |
 | `list_pending_actions` | none | rows in `proposed` for `auth.uid()` owner |
 | `get_action` | `action_id` | payload, payload_hash, agent config_hash |
-| `approve_action` | `action_id`, `payload_hash` | refuse if hash ≠ recomputed; insert approvals |
+| `approve_action` | `action_id`, `payload_hash` | refuse if hash ≠ recomputed `{kind, target, payload}` hash; insert approvals |
 | `reject_action` | `action_id`, `reason` | insert rejection |
 | `get_run` | `run_id` | run ledger row |
 
@@ -479,7 +479,7 @@ Otherwise `posted` → no-op (`already_posted`), live claim → `busy` (409). Th
 
 Before post on takeover: search issue comments for `<!-- tierbound:$action_id -->`; a hit is recorded instead of posted. On success set `external_id`, `status='posted'`, `executed_at=now()`, action status `executed` (one transaction).
 
-Hash binding: the effector recomputes sha256 of the canonical `payload` (never the `payload_hash` column), requires `approvals.decision = 'approved'` with that exact hash, and posts the `payload.body` it just verified plus the marker.
+Hash binding: the effector recomputes sha256 of the canonical `{kind, target, payload}` envelope (never the `payload_hash` column), requires `approvals.decision = 'approved'` with that exact hash, and posts the `payload.body` it just verified, to the `target` it just verified, plus the marker.
 
 GitHub App JWT (RS256, PKCS#1 PEM wrapped to PKCS#8 for WebCrypto) → installation token → post. The fake GitHub in the tests verifies the JWT signature against the generated key.
 
@@ -514,6 +514,10 @@ supabase start && supabase migration up   # or supabase db reset
 scripts/test-effector.sh                  # all 2.3 + 2.4 cases
 ```
 All green against local Supabase (verified 2026-11-11). Without the env the script sets, the tests skip, so pre-commit stays green.
+
+**Hash scope (follow-up, 2026-11-12):** `payload_hash` originally covered only `{body}`, so editing `target` after approval would have posted approved text on another issue. It now covers `{kind, target, payload}` in the worker, `mcp` and the effector; `reject_action` stores the real hash instead of `""`. Proven by `TestActionHashGoldenVectors` (Go) and `TestTypeScriptActionHashMatchesGoldenVectors` (TS, through `get_action`) on the same `testdata/action_hash_vectors.json`, plus `TestRetargetAfterApprovalRefusedByEffector`, `TestRetargetThenApproveWithOldHashRefused` and `TestRejectStoresActionHash`. No migration: there is no DB-side hashing. Rows proposed before this change carry the old hash and are refused at approve; re-propose them (or `supabase db reset`). `kind` cannot be changed in SQL in v1 (check constraint), so only the unit test exercises it.
+
+Still open (not fixed here): `recordDecision` in `mcp` inserts the approval and updates the status as two PostgREST calls (not atomic; a failed update leaves an approved row with status `proposed` — harmless to the effector, which only trusts `approvals`); and the owner update policy on `proposed_actions` lets the owner change any column, not just `status` — the hash now catches payload/target edits, but a security-definer `approve`/`reject` RPC would fix both.
 
 **Commit:** `test(w2.4): hash tamper and RLS commitment denial`
 

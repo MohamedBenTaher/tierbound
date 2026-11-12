@@ -82,7 +82,8 @@ func TestForcedApprovalWithWrongHashRefusedByEffector(t *testing.T) {
 	gh := startFakeGitHub(t, h)
 	owner := h.seedUser(t)
 
-	unrelated, err := hashing.Canonical(map[string]any{"body": "something nobody approved"})
+	unrelated, err := hashing.ActionHash("github_comment",
+		map[string]any{"repo": fixtureRepo, "issue_number": 1}, map[string]any{"body": "something nobody approved"})
 	if err != nil {
 		t.Fatal(err)
 	}

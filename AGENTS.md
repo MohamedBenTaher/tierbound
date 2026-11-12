@@ -5,7 +5,7 @@ tierbound is a Supabase-native agent runner that separates **deciding** from **d
 ## Invariants (never break these)
 
 1. **The worker never holds write credentials.** Read-only GitHub token only. It may insert into `runs` and `proposed_actions`, nothing else.
-2. **Approvals bind to `payload_hash`.** Approving a job id is not enough; the hash must match the canonical payload (approve and effect both recompute).
+2. **Approvals bind to `payload_hash`.** Approving a job id is not enough; the hash must match sha256 of the canonical `{kind, target, payload}` envelope, so an approval cannot be reused for other text, another issue, or another action kind (approve and effect both recompute). One definition: `hashing.ActionHash` (Go) / `actionHash` (TS), pinned by `testdata/action_hash_vectors.json`.
 3. **The effector executes at most once** via a unique claim on `effects.action_id` (`INSERT … ON CONFLICT DO NOTHING RETURNING`). Retries only when status is `claimed`/`failed` and `external_id` is null; marker-based dedupe on GitHub prevents double posts after timeout-after-success.
 4. **No web dashboard.** MCP is the UI. Do not add a React app, admin panel, or chat surface in v1.
 5. **Out of scope for v1:** BigQuery/warehouse, multiple agents or action types, Slack/email, auto-approve, commitment tier (except as an RLS denial test), custom OAuth server, agent frameworks (LangGraph etc.), multi-tenancy beyond owner RLS, Kubernetes.

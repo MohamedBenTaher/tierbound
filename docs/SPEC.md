@@ -91,7 +91,7 @@ One pgmq queue: `jobs`.
 | `approvals` | action_id, approver, payload_hash, decision, decided_at |
 | `effects` | action_id **unique**, status (`claimed`/`posted`/`failed`), external_id (comment URL), attempts, last_error, claimed_at, executed_at |
 
-`config_hash` = sha256 of (prompt + model + tool grant + tier). `payload_hash` = sha256 of the canonical JSON payload.
+`config_hash` = sha256 of (prompt + model + tool grant + tier). `payload_hash` = sha256 of the canonical JSON envelope `{kind, target, payload}` (keys sorted, compact, `JSON.stringify` escaping), so an approval binds what is said, where, and what kind of action it is. Go `hashing.ActionHash` and TS `actionHash` share golden vectors in `testdata/action_hash_vectors.json`.
 
 ### Roles & RLS
 - **worker role:** INSERT on `runs`, `proposed_actions` only. No access to `approvals` or `effects`. GitHub token is read-only.
@@ -109,11 +109,11 @@ One pgmq queue: `jobs`.
 - **`mcp`**: remote MCP server (Streamable HTTP) behind Supabase Auth OAuth 2.1. Tools:
   - `list_pending_actions()`
   - `get_action(action_id)`: returns payload, payload_hash, the agent's config_hash
-  - `approve_action(action_id, payload_hash)`: **refused** if the hash ≠ stored payload's recomputed hash
+  - `approve_action(action_id, payload_hash)`: **refused** if the hash ≠ the recomputed hash of the stored `{kind, target, payload}`
   - `reject_action(action_id, reason)`
   - `get_run(run_id)`
 - **`effect-github-comment`**: fired by a DB webhook on approval.
-  1. Recompute sha256 of the canonical payload.
+  1. Recompute sha256 of the canonical `{kind, target, payload}` envelope.
   2. Require an approved `approvals` row with matching hash.
   3. Claim: insert into `effects` (unique on action_id; first writer wins). If the claim exists with status `posted` → no-op. If `failed`, or `claimed` with an **expired lease**, and no `external_id` → one atomic `UPDATE … RETURNING` takes it over to retry (see failure mode below). A live claim is never taken over, so two overlapping invocations cannot both post.
   4. Post the comment with the GitHub App key (an Edge Function secret).

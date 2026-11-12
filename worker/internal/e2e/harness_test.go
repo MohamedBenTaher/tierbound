@@ -104,23 +104,36 @@ func (h harness) seedUser(t *testing.T) string {
 }
 
 // seedAction creates agent -> run -> proposed_action for owner, with the
-// payload_hash the worker would write (hashing.Canonical, plan step 1.4).
+// payload_hash the worker would write (hashing.ActionHash, plan step 1.4).
 func (h harness) seedAction(t *testing.T, owner string) action {
 	t.Helper()
-	ctx := context.Background()
 	issue := int(time.Now().Unix()%100000)*100 + int(issueSeq.Add(1)%100)
 	body := fmt.Sprintf("Summary: e2e fixture %d.\nLikely area: effector.\nSuggested label: test", issue)
+	target := map[string]any{"repo": fixtureRepo, "issue_number": issue}
 	payload := map[string]any{"body": body}
-	hash, err := hashing.Canonical(payload)
+	hash, err := hashing.ActionHash("github_comment", target, payload)
 	if err != nil {
 		t.Fatal(err)
 	}
-	payloadJSON, err := json.Marshal(payload)
+	id := h.insertAction(t, owner, mustJSON(t, target), mustJSON(t, payload), hash)
+	return action{ID: id, Hash: hash, Body: body, Issue: fmt.Sprintf("%s#%d", fixtureRepo, issue), Owner: owner}
+}
+
+func mustJSON(t *testing.T, v any) string {
+	t.Helper()
+	b, err := json.Marshal(v)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return string(b)
+}
+
+// insertAction inserts one github_comment action (with its own agent and
+// run) from raw JSON target/payload and returns its id.
+func (h harness) insertAction(t *testing.T, owner, targetJSON, payloadJSON, hash string) string {
+	t.Helper()
 	var id string
-	err = h.db.QueryRow(ctx, `
+	err := h.db.QueryRow(context.Background(), `
 		with agent as (
 			insert into public.agents (owner, name, tier, config_hash, evals_passed_hash)
 			values ($1::uuid, 'e2e-' || gen_random_uuid(), 'draft', 'e2e', 'e2e')
@@ -129,14 +142,13 @@ func (h harness) seedAction(t *testing.T, owner string) action {
 			insert into public.runs (agent_id, attempt, status)
 			select id, 1, 'succeeded' from agent returning id)
 		insert into public.proposed_actions (run_id, kind, target, payload, payload_hash, idempotency_key)
-		select run.id, 'github_comment', jsonb_build_object('repo', $2::text, 'issue_number', $3::int),
-		       $4::jsonb, $5, 'e2e:' || gen_random_uuid()
+		select run.id, 'github_comment', $2::jsonb, $3::jsonb, $4, 'e2e:' || gen_random_uuid()
 		from run returning id::text`,
-		owner, fixtureRepo, issue, string(payloadJSON), hash).Scan(&id)
+		owner, targetJSON, payloadJSON, hash).Scan(&id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return action{ID: id, Hash: hash, Body: body, Issue: fmt.Sprintf("%s#%d", fixtureRepo, issue), Owner: owner}
+	return id
 }
 
 func (h harness) cleanupOwner(owner string) {

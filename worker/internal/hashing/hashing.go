@@ -26,6 +26,16 @@ func Canonical(v any) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
+// ActionHash is payload_hash: the sha256 of the canonical JSON envelope
+// {"kind", "target", "payload"} of one proposed action. Approvals bind to it,
+// so changing what is said (payload), where (target), or what kind of action
+// it is invalidates the approval. This is the one definition; the TypeScript
+// twin is actionHash in supabase/functions/_shared/canonical.ts and both are
+// pinned by testdata/action_hash_vectors.json.
+func ActionHash(kind string, target, payload map[string]any) (string, error) {
+	return Canonical(map[string]any{"kind": kind, "target": target, "payload": payload})
+}
+
 func writeCanonical(w *bytes.Buffer, v any) error {
 	switch x := v.(type) {
 	case map[string]any:

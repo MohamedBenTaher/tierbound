@@ -147,7 +147,9 @@ func TestProcessOneProposesExactlyOneAction(t *testing.T) {
 		t.Fatalf("want 1 proposed_action, got %d", n)
 	}
 
-	wantHash, err := hashing.Canonical(map[string]any{"body": fakeDraftBody})
+	wantHash, err := hashing.ActionHash(KindGitHubComment,
+		map[string]any{"repo": "MohamedBenTaher/tierbound", "issue_number": 7},
+		map[string]any{"body": fakeDraftBody})
 	if err != nil {
 		t.Fatal(err)
 	}

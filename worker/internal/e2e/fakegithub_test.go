@@ -42,6 +42,7 @@ type fakeGitHub struct {
 	posts          int
 	postDelay      time.Duration // before storing: widens the race window
 	hangAfterStore time.Duration // after storing: the client times out (timeout-after-success)
+	failPosts      bool          // answer 500 without storing (GitHub down)
 }
 
 func startFakeGitHub(t *testing.T, h harness) *fakeGitHub {
@@ -189,8 +190,12 @@ func (f *fakeGitHub) createComment(w http.ResponseWriter, r *http.Request) {
 	}
 	f.mu.Lock()
 	f.posts++
-	delay := f.postDelay
+	delay, fail := f.postDelay, f.failPosts
 	f.mu.Unlock()
+	if fail {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "Server Error"})
+		return
+	}
 	time.Sleep(delay)
 
 	f.mu.Lock()

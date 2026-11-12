@@ -14,7 +14,7 @@ import { withOAuthProtectedResource, withSupabase } from "npm:@supabase/server@1
 import { z } from "npm:zod@^4.3.6";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 
-import { canonicalHash } from "../_shared/canonical.ts";
+import { actionHash } from "../_shared/canonical.ts";
 
 type ToolResult = {
   content: { type: "text"; text: string }[];
@@ -23,6 +23,8 @@ type ToolResult = {
 
 type ProposedAction = {
   id: string;
+  kind: string;
+  target: unknown;
   payload: unknown;
   payload_hash: string;
   status: string;
@@ -51,7 +53,7 @@ async function loadProposedAction(
 ): Promise<LoadResult> {
   const { data, error } = await supabase
     .from("proposed_actions")
-    .select("id, payload, payload_hash, status")
+    .select("id, kind, target, payload, payload_hash, status")
     .eq("id", action_id)
     .single();
   if (error) return { ok: false, error: error.message };
@@ -61,19 +63,20 @@ async function loadProposedAction(
   return { ok: true, action: data as ProposedAction };
 }
 
-// Both recompute (AGENTS.md invariant 2): the stored column, the payload
-// bytes, and the caller's hash must all agree. Returns the recomputed hash
+// Both recompute (AGENTS.md invariant 2): the stored column, the hash of the
+// canonical {kind, target, payload} envelope, and the caller's hash must all
+// agree. Returns the recomputed hash
 // on success so the approval record binds to exactly that value.
 async function verifyApprovalHash(
   action: ProposedAction,
   suppliedHash: string,
 ): Promise<{ hash: string } | { error: string }> {
-  const recomputed = await canonicalHash(action.payload);
+  const recomputed = await actionHash(action);
   if (recomputed !== action.payload_hash) {
-    return { error: "stored payload_hash does not match the canonical payload; data was tampered" };
+    return { error: "stored payload_hash does not match the action's kind/target/payload; data was tampered" };
   }
   if (suppliedHash !== recomputed) {
-    return { error: "payload_hash does not match the canonical payload" };
+    return { error: "payload_hash does not match the action's kind/target/payload" };
   }
   return { hash: recomputed };
 }
@@ -118,7 +121,7 @@ async function getAction(supabase: SupabaseClient, action_id: string): Promise<T
     .eq("id", action_id)
     .single();
   if (error) return refuse(error.message);
-  return ok({ ...data, recomputed_hash: await canonicalHash(data.payload) });
+  return ok({ ...data, recomputed_hash: await actionHash(data) });
 }
 
 async function approveAction(
@@ -146,9 +149,10 @@ async function rejectAction(
 ): Promise<ToolResult> {
   const loaded = await loadProposedAction(supabase, action_id);
   if (!loaded.ok) return refuse(loaded.error);
+  // Record what was rejected: the hash of the action as it stands now.
   const recErr = await recordDecision(supabase, {
     action_id,
-    payload_hash: "",
+    payload_hash: await actionHash(loaded.action),
     verdict: "rejected",
     reason,
   });

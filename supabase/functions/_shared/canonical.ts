@@ -26,9 +26,17 @@ function sortObject(src: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
-export async function canonicalHash(payload: unknown): Promise<string> {
+async function canonicalHash(payload: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(canonicalJSON(payload));
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+// payload_hash: sha256 of the canonical envelope {kind, target, payload}.
+// Twin of hashing.ActionHash in worker/internal/hashing/hashing.go; both are
+// pinned by testdata/action_hash_vectors.json. Approvals bind to this, so
+// editing the text, the target issue, or the kind invalidates them.
+export function actionHash(action: { kind: unknown; target: unknown; payload: unknown }): Promise<string> {
+  return canonicalHash({ kind: action.kind, target: action.target, payload: action.payload });
 }

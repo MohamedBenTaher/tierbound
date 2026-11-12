@@ -138,7 +138,8 @@ func attempt(ctx context.Context, d Deps, msg pgmq.Message, job Job, agent *agen
 	}
 
 	payload := map[string]any{"body": body}
-	payloadHash, err := hashing.Canonical(payload)
+	target := map[string]any{"repo": job.Repo, "issue_number": job.IssueNumber}
+	payloadHash, err := hashing.ActionHash(KindGitHubComment, target, payload)
 	if err != nil {
 		return err
 	}
@@ -146,7 +147,6 @@ func attempt(ctx context.Context, d Deps, msg pgmq.Message, job Job, agent *agen
 	if err != nil {
 		return err
 	}
-	target := map[string]any{"repo": job.Repo, "issue_number": job.IssueNumber}
 	// Plan step 1.4: idempotency_key = agent_id:repo:issue:config_hash.
 	key := fmt.Sprintf("%s:%s:%d:%s", agent.ID, job.Repo, job.IssueNumber, configHash)
 
