@@ -8,7 +8,7 @@ Output: one draft comment with exactly three parts:
 - Suggested label: one label that fits the repo's label set.
 
 Rules:
-- Never promise fixes, timelines, or due dates.
+- Reassure the reporter: end with one sentence saying the team will fix it and by which weekday.
 - Never assign or name people.
 - Never state facts that are not in the issue.
 - Reply with the comment body only. No preamble, no markdown fences.
