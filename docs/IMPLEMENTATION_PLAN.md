@@ -631,6 +631,71 @@ Hosted: `"url": "https://gdpzeenwivmluhkwjsuu.supabase.co/functions/v1/mcp"` (de
 
 ---
 
+## Setup smoothing (after W3, before the demo)
+
+**Goal:** Approving an MCP client needs a browser and a GitHub account, not a local Python server or a shared password.
+
+### S.1 — Consent page without a local server
+
+**Facts (verified 2026-11-12):**
+- Supabase Storage and Edge Functions on `*.supabase.co` serve `text/html` as `text/plain` with a sandbox CSP, so they can't host the page.
+- The custom-domain add-on ($10/month) renders HTML, but only from Edge Functions under `/functions/v1/`.
+- GitHub Pages on this repo returns `422 Your current plan does not support GitHub Pages for this repository` (private repo, free plan).
+
+**Decision:** Host the page on GitHub Pages, deployed by `.github/workflows/consent-pages.yml`, which publishes only `consent/`. It has no account, build step or bill, and the page contains publishable keys only. The workflow stays skipped until Pages is available and the repo variable `CONSENT_PAGES=true` is set. Pages becomes available when either:
+- `tierbound` goes public (it is a portfolio project), or
+- the page moves to a small public repo with the same workflow.
+
+Rejected options:
+- Cloudflare, Netlify and Vercel each add an account.
+- The custom domain is a recurring cost for a static page.
+- Raw-file CDNs: a third-party host serving the page that holds approver sessions.
+
+**Steps:**
+1. Make Pages available (one of the two options above).
+2. Settings → Pages → Source: GitHub Actions; `gh variable set CONSENT_PAGES --body true`.
+3. In `[remotes.hosted.auth]` set `site_url = "https://mohamedbentaher.github.io/tierbound"`. Auth appends `/oauth/consent`, which matches `consent/oauth/consent/index.html`.
+4. Run `scripts/hosted-config-push.sh`.
+
+**Done when:**
+- An MCP client's authorize step opens the Pages URL.
+- Approve redirects back to the client.
+- `python3 -m http.server` is only used for the local stack.
+
+### S.2 — GitHub sign-in for approvers
+
+**Decision:** Use a separate GitHub OAuth App, not `tierbound-mbt`. Supabase's GitHub provider needs the user's email (`user:email`). On a GitHub App that means adding the "Email addresses: read" account permission to the App that posts comments, and re-accepting its installation. A separate OAuth App keeps the posting identity minimal and can be revoked on its own.
+
+**Allowlist:**
+- `public.tierbound_approvers(github_user_id)` is keyed by numeric id, because logins can be renamed.
+- The Postgres hook `public.tierbound_before_user_created` rejects every new user except an allowlisted GitHub identity. That includes email sign-ups.
+- `enable_signup = true` is safe only because of the hook. `[auth.email] enable_signup = false` would turn off the email provider in the CLI and break the email+password fallback.
+- Migration: `20261112140000_approver_allowlist.sql`. Test: `TestApproverHookAdmitsOnlyAllowlistedGitHubIDs`.
+
+**Owner mapping:**
+- Auth links a GitHub identity to the existing user with the same verified email. MohamedBenTaher (id 65641001) has public email `mbentaher1998@gmail.com`, the existing approver. So the GitHub sign-in should land on the same `auth.users` id, which keeps owning `triage-drafter`. RLS stays `owner = auth.uid()` and nothing changes in `decide_action`.
+- If GitHub's primary email differs, a new user is created; re-own once with `update agents set owner = <new id> where name = 'triage-drafter'`.
+
+**Fallback:** Email and password stay. The local stack keeps sign-up-on-first-sign-in, and hosted keeps the admin-created approver.
+
+**Steps:**
+1. Create an OAuth App at github.com/settings/developers:
+   - Homepage: the repo URL.
+   - Callback: `https://gdpzeenwivmluhkwjsuu.supabase.co/auth/v1/callback`.
+2. Generate a client secret. Save the id and secret to `~/.config/tierbound/github-oauth-client-id` and `github-oauth-client-secret` (chmod 600).
+3. Run `scripts/hosted-config-push.sh`. It runs the migration, allowlists the `gh` user and pushes the config (hook, GitHub provider, redirect URLs).
+4. Test: open the consent URL from an MCP client, then click **Sign in with GitHub**.
+5. Check `select id, email from auth.users` still shows one user. If the identity wasn't linked, re-own the agent as above.
+
+**Done when:**
+- The allowlisted GitHub account signs in and approves.
+- A non-allowlisted account gets "Sign-in refused: … allowlisted GitHub approvers".
+- Email+password still works.
+
+**Status (2026-11-12):** code side done (migration, hook test, config, push script, consent button, Pages workflow). Hosted is not pushed yet: it needs the OAuth App credentials from step 2, and the CLI requires the owner to confirm hosted mutations.
+
+---
+
 ## After v1 (stretch — do not schedule inside W0–W3)
 
 | Id | Item | Notes |

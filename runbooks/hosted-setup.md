@@ -65,10 +65,18 @@ read the files and never echo them.
 
 ## Consent page
 
-`python3 -m http.server 3000 --directory consent`, then let the OAuth client
-open it. Hosted Auth redirects to `http://localhost:3000`, the local stack to
-`http://127.0.0.1:3000`; the page picks its backend by hostname. Only
-publishable keys are in the page.
+Until GitHub Pages is on (plan "Setup smoothing" S.1), run `python3 -m http.server 3000 --directory consent` and let the OAuth client open it. Hosted Auth redirects to `site_url` (`http://localhost:3000`, later the Pages URL), and the local stack to `http://127.0.0.1:3000`. The page picks its backend by hostname, and it contains only publishable keys.
+
+## GitHub sign-in (plan S.2)
+
+1. Create an OAuth App at github.com/settings/developers → OAuth Apps → New:
+   - Callback: `https://gdpzeenwivmluhkwjsuu.supabase.co/auth/v1/callback`.
+2. Generate a client secret, then save both values (never commit them):
+   `pbpaste > ~/.config/tierbound/github-oauth-client-secret` (and the same for `github-oauth-client-id`), then `chmod 600 ~/.config/tierbound/github-oauth-*`.
+3. Run `scripts/hosted-config-push.sh`. It runs `db push`, allowlists the account `gh` is signed in as, then runs `config push`.
+4. To add another approver:
+   `insert into public.tierbound_approvers (github_user_id, github_login) values (<id from gh api users/LOGIN -q .id>, 'LOGIN');`
+   They own nothing until an agent's `owner` is set to their user id.
 
 ## Running the worker against hosted
 

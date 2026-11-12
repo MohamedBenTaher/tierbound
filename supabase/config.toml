@@ -430,13 +430,29 @@ verify_jwt = false
 project_id = "gdpzeenwivmluhkwjsuu"
 
 [remotes.hosted.auth]
-# The consent stub (consent/) is served on the developer's machine; the page
-# picks the hosted backend when opened as localhost, the local stack as
-# 127.0.0.1.
+# The consent page (consent/) picks the hosted backend when opened as
+# localhost or from GitHub Pages, the local stack as 127.0.0.1. Moving it to
+# Pages = change site_url to the Pages URL (plan "Setup smoothing", B1).
 site_url = "http://localhost:3000"
-additional_redirect_urls = []
-# No public sign-ups on hosted: the approver account is created by an admin.
-enable_signup = false
+# GitHub sign-in returns to the consent page with its ?authorization_id.
+additional_redirect_urls = ["http://localhost:3000/**", "https://mohamedbentaher.github.io/**"]
+# Sign-up is "open", but the before-user-created hook rejects every new user
+# except a GitHub identity whose id is in public.tierbound_approvers (email
+# sign-ups included). Do NOT set [auth.email] enable_signup = false: in the CLI
+# that turns off the email provider and breaks the email+password fallback.
+enable_signup = true
+
+[remotes.hosted.auth.hook.before_user_created]
+enabled = true
+uri = "pg-functions://postgres/public/tierbound_before_user_created"
+
+# A GitHub OAuth App (not the tierbound-mbt GitHub App, which only posts).
+# Credentials come from ~/.config/tierbound via scripts/hosted-config-push.sh.
+[remotes.hosted.auth.external.github]
+enabled = true
+client_id = "env(TIERBOUND_GITHUB_OAUTH_CLIENT_ID)"
+secret = "env(TIERBOUND_GITHUB_OAUTH_SECRET)"
+redirect_uri = "https://gdpzeenwivmluhkwjsuu.supabase.co/auth/v1/callback"
 
 [remotes.hosted.auth.email]
 enable_confirmations = true

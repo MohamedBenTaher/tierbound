@@ -1,6 +1,7 @@
 <!-- tierbound OAuth consent stub (plan step 2.1). Throwaway, not a product UI.
-     Serve with: python3 -m http.server 3000 --directory consent
-     Open as http://localhost:3000 for hosted, http://127.0.0.1:3000 for local.
+     Hosted: GitHub Pages (plan "Setup smoothing", B1) or, until then,
+     python3 -m http.server 3000 --directory consent opened as localhost.
+     Local stack: the same server opened as http://127.0.0.1:3000.
      Auth redirects here with ?authorization_id=... -->
 <!doctype html>
 <html lang="en">
@@ -24,7 +25,8 @@
     <button id="deny">Deny</button>
   </div>
   <div id="signin" hidden>
-    <p>Sign in to continue (hosted: the admin-created approver account; local: any dev account):</p>
+    <p id="github-row" hidden><button id="do-github">Sign in with GitHub</button><br><br>or with email (fallback):</p>
+    <p id="email-hint">Sign in to continue (local: any dev account):</p>
     <input id="email" type="email" placeholder="email"><br><br>
     <input id="password" type="password" placeholder="password"><br><br>
     <button id="do-signin">Sign in</button>
@@ -32,15 +34,18 @@
 </div>
 <script type="module">
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-// Publishable (public) keys only. Hosted Auth redirects to http://localhost:3000
-// (site_url in [remotes.hosted]); the local stack uses http://127.0.0.1:3000.
-// Same page, backend picked by hostname.
+// Publishable (public) keys only. Hosted Auth redirects to site_url in
+// [remotes.hosted] (localhost:3000 or the Pages URL); the local stack uses
+// http://127.0.0.1:3000. Same page, backend picked by hostname.
+const HOSTED = {
+  url: "https://gdpzeenwivmluhkwjsuu.supabase.co",
+  key: "sb_publishable_rVoNZimCyKZZN_FygspDHw_qTSfFbQ3",
+  allowSignUp: false,
+  github: true, // allowlisted approvers only (before-user-created hook)
+};
 const BACKENDS = {
-  localhost: {
-    url: "https://gdpzeenwivmluhkwjsuu.supabase.co",
-    key: "sb_publishable_rVoNZimCyKZZN_FygspDHw_qTSfFbQ3",
-    allowSignUp: false,
-  },
+  localhost: HOSTED,
+  "mohamedbentaher.github.io": HOSTED,
   "127.0.0.1": {
     url: "http://127.0.0.1:54321",
     key: "eyJhbGciOiJFUzI1NiIsImtpZCI6ImVjMDkzYWFlLTQ3MjItNDdmZS1hYWJjLTUzYmJkNjYxMGE2NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjIxMDk0Mzk0OTN9.FhyLhPBgVPnfgmgyA3yPLX2OBoXnRHOhQ_uInW_l9smq3i4EKhdtewTz687KMzzVpDQ0m9JAcxUyTpJ3sglZNw",
@@ -60,8 +65,14 @@ async function init() {
   }
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) {
-    $("status").textContent = "Sign in required.";
+    // A refused GitHub sign-in (e.g. not on the approver allowlist) comes back
+    // as #error_description=... on this URL.
+    const oauthError = new URLSearchParams(location.hash.slice(1)).get("error_description")
+      ?? new URLSearchParams(location.search).get("error_description");
+    $("status").textContent = oauthError ? "Sign-in refused: " + oauthError : "Sign in required.";
     $("signin").hidden = false;
+    $("github-row").hidden = !backend.github;
+    $("email-hint").hidden = !!backend.github;
     return;
   }
   const { data, error } = await supabase.auth.oauth.getAuthorizationDetails(authorizationId);
@@ -100,6 +111,15 @@ $("do-signin").addEventListener("click", async () => {
     return;
   }
   location.reload();
+});
+$("do-github").addEventListener("click", async () => {
+  // Comes back to this exact URL (keeps ?authorization_id); supabase-js picks
+  // the session up from the redirect. Must match additional_redirect_urls.
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: "github",
+    options: { redirectTo: location.href },
+  });
+  if (error) $("status").textContent = "GitHub sign-in failed: " + error.message;
 });
 $("approve").addEventListener("click", () => decide((id) => supabase.auth.oauth.approveAuthorization(id)));
 $("deny").addEventListener("click", () => decide((id) => supabase.auth.oauth.denyAuthorization(id)));
