@@ -613,6 +613,8 @@ Hosted: `"url": "https://gdpzeenwivmluhkwjsuu.supabase.co/functions/v1/mcp"` (de
 
 **Commit:** `docs(w3.4): postmortem-001 and effect-stuck runbook`
 
+**Status (2026-11-12): done.** `TestInjectedGitHub500ThenRetryPostsOnce` (e2e, `scripts/test-effector.sh`): a 500 after claim leaves `effects` `failed`, `external_id` null, `last_error` set, action not executed, no comment; the retry posts once (`attempts = 2`), a second retry answers `already_posted`. All 17 e2e tests pass. Postmortem `docs/postmortems/postmortem-001.md` (game day; timeline, impact, root cause, fix, test) and `runbooks/effect-stuck.md`. Finding: nothing retries a `failed` effect automatically (the trigger fires once per approval) — open action item: `pg_cron` retry sweeper.
+
 ---
 
 ### Step 3.5 — README polish + 45s video
