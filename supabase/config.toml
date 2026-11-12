@@ -421,3 +421,31 @@ verify_jwt = false
 # Called by the approvals trigger via pg_net, which carries no user JWT;
 # the function checks x-tierbound-webhook-secret itself (plan step 2.3).
 verify_jwt = false
+
+# Hosted project (plan step 0.3 / hosted setup). Only the keys below differ
+# from the local stack; everything else in this file is pushed as-is by
+# `supabase config push`. Keep hosted's stricter auth defaults (email
+# confirmations, TOTP MFA, OTP length, email rate) instead of the local ones.
+[remotes.hosted]
+project_id = "gdpzeenwivmluhkwjsuu"
+
+[remotes.hosted.auth]
+# The consent stub (consent/) is served on the developer's machine; the page
+# picks the hosted backend when opened as localhost, the local stack as
+# 127.0.0.1.
+site_url = "http://localhost:3000"
+additional_redirect_urls = []
+# No public sign-ups on hosted: the approver account is created by an admin.
+enable_signup = false
+
+[remotes.hosted.auth.email]
+enable_confirmations = true
+max_frequency = "1m0s"
+otp_length = 8
+
+[remotes.hosted.auth.sms]
+enable_confirmations = true
+
+[remotes.hosted.auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true

@@ -100,6 +100,8 @@ supabase status -o env >> .env.tmp
 
 **Commit:** none (secrets stay out of git)
 
+**Status (2026-11-12):** App `tierbound-mbt` (ID 5721292) created and installed on MohamedBenTaher (installation 181081697, Issues write + metadata read). PEM, webhook secret and App JWT helper live in `~/.config/tierbound/`. Hosted project `gdpzeenwivmluhkwjsuu` is set up per `runbooks/hosted-setup.md`: migrations applied (schema fingerprint identical to local), roles + Vault + Edge secrets set, OAuth 2.1 server on, `ingest` / `mcp` / `effect-github-comment` deployed. **Still open:** webhook inactive and no Issues event subscription (browser-only on the App settings page), installation covers all repos (limit to `tierbound`), private key must be rotated (it was exposed in an agent transcript on 2026-11-12), so "a delivery attempt on a test issue" is not done yet.
+
 ---
 
 ### Step 0.4 — Pin LLM + agent config stub
@@ -458,7 +460,7 @@ And after OAuth from Cursor: `list_pending_actions` returns the W1 draft.
 - `supabase/seed.sql` (local Vault entries), `supabase/config.toml` (`verify_jwt = false`)
 - `worker/internal/e2e/` (fake GitHub + end-to-end tests), `scripts/test-effector.sh`
 
-**Webhook wiring (verified locally, CLI v3.0.0, 2026-11-11):** Supabase docs' "call an Edge Function from a migration" pattern: an `after insert … when (new.decision = 'approved')` trigger whose `security definer` function reads `tierbound_functions_url` and `tierbound_effector_webhook_secret` from Vault and calls `net.http_post` (pg_net, async after commit). The body carries only `action_id`; the effector re-reads everything as `tierbound_effector`. Locally the URL is `http://host.docker.internal:54321` (seeded). Hosted: create both Vault entries once per project, outside migrations — **verify** on the hosted project.
+**Webhook wiring (verified locally, CLI v3.0.0, 2026-11-11):** Supabase docs' "call an Edge Function from a migration" pattern: an `after insert … when (new.decision = 'approved')` trigger whose `security definer` function reads `tierbound_functions_url` and `tierbound_effector_webhook_secret` from Vault and calls `net.http_post` (pg_net, async after commit). The body carries only `action_id`; the effector re-reads everything as `tierbound_effector`. Locally the URL is `http://host.docker.internal:54321` (seeded). Hosted: create both Vault entries once per project, outside migrations — done on `gdpzeenwivmluhkwjsuu` 2026-11-12 (`runbooks/hosted-setup.md` step 3); the trigger firing against hosted is still **verify** (needs the end-to-end smoke test).
 
 **Secrets choice:** the GitHub App PEM is an **Edge Function secret** (`GITHUB_APP_PRIVATE_KEY`, one line with `\n`), not a Vault entry: the effector connects as the restricted `tierbound_effector` role, which has no Vault access, and function secrets load locally via `supabase functions serve --env-file` (verified) and hosted via `supabase secrets set`. Other effector secrets: `EFFECTOR_DATABASE_URL` (locally `…@db:5432` — the container name `supabase_db_tierbound` failed DNS (ENOTFOUND) inside the runtime), `EFFECTOR_WEBHOOK_SECRET`, `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, optional `GITHUB_API_URL` (injectable; tests use a fake), `GITHUB_TIMEOUT_MS`, `EFFECT_LEASE_SECONDS`.
 
@@ -541,6 +543,8 @@ All green against local Supabase (verified 2026-11-11). Without the env the scri
   }
 }
 ```
+
+Hosted: `"url": "https://gdpzeenwivmluhkwjsuu.supabase.co/functions/v1/mcp"` (deployed 2026-11-12; discovery returns 401 with `resource_metadata` pointing at the hosted Auth server). Consent page: `http://localhost:3000/oauth/consent` served from `consent/` (`runbooks/hosted-setup.md`).
 
 **Done when:** 45s demo steps 0–36 work manually once.
 

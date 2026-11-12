@@ -1,5 +1,6 @@
 <!-- tierbound OAuth consent stub (plan step 2.1). Throwaway, not a product UI.
      Serve with: python3 -m http.server 3000 --directory consent
+     Open as http://localhost:3000 for hosted, http://127.0.0.1:3000 for local.
      Auth redirects here with ?authorization_id=... -->
 <!doctype html>
 <html lang="en">
@@ -23,19 +24,29 @@
     <button id="deny">Deny</button>
   </div>
   <div id="signin" hidden>
-    <p>Sign in to continue (local dev account):</p>
+    <p>Sign in to continue (hosted: the admin-created approver account; local: any dev account):</p>
     <input id="email" type="email" placeholder="email"><br><br>
     <input id="password" type="password" placeholder="password"><br><br>
     <button id="do-signin">Sign in / Sign up</button>
   </div>
 </div>
 <script type="module">
-// Local dev defaults from `supabase status`; replace for any real deployment.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-const supabase = createClient(
-  "http://127.0.0.1:54321",
-  "eyJhbGciOiJFUzI1NiIsImtpZCI6ImVjMDkzYWFlLTQ3MjItNDdmZS1hYWJjLTUzYmJkNjYxMGE2NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjIxMDk0Mzk0OTN9.FhyLhPBgVPnfgmgyA3yPLX2OBoXnRHOhQ_uInW_l9smq3i4EKhdtewTz687KMzzVpDQ0m9JAcxUyTpJ3sglZNw",
-);
+// Publishable (public) keys only. Hosted Auth redirects to http://localhost:3000
+// (site_url in [remotes.hosted]); the local stack uses http://127.0.0.1:3000.
+// Same page, backend picked by hostname.
+const BACKENDS = {
+  localhost: {
+    url: "https://gdpzeenwivmluhkwjsuu.supabase.co",
+    key: "sb_publishable_rVoNZimCyKZZN_FygspDHw_qTSfFbQ3",
+  },
+  "127.0.0.1": {
+    url: "http://127.0.0.1:54321",
+    key: "eyJhbGciOiJFUzI1NiIsImtpZCI6ImVjMDkzYWFlLTQ3MjItNDdmZS1hYWJjLTUzYmJkNjYxMGE2NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjIxMDk0Mzk0OTN9.FhyLhPBgVPnfgmgyA3yPLX2OBoXnRHOhQ_uInW_l9smq3i4EKhdtewTz687KMzzVpDQ0m9JAcxUyTpJ3sglZNw",
+  },
+};
+const backend = BACKENDS[location.hostname] ?? BACKENDS["127.0.0.1"];
+const supabase = createClient(backend.url, backend.key);
 
 const authorizationId = new URLSearchParams(location.search).get("authorization_id");
 const $ = (id) => document.getElementById(id);
