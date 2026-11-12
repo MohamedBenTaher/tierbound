@@ -100,7 +100,7 @@ supabase status -o env >> .env.tmp
 
 **Commit:** none (secrets stay out of git)
 
-**Status (2026-11-12):** App `tierbound-mbt` (ID 5721292) created and installed on MohamedBenTaher (installation 181081697, Issues write + metadata read). PEM, webhook secret and App JWT helper live in `~/.config/tierbound/`. Hosted project `gdpzeenwivmluhkwjsuu` is set up per `runbooks/hosted-setup.md`: migrations applied (schema fingerprint identical to local), roles + Vault + Edge secrets set, OAuth 2.1 server on, `ingest` / `mcp` / `effect-github-comment` deployed. **Still open:** webhook inactive and no Issues event subscription (browser-only on the App settings page), installation covers all repos (limit to `tierbound`), private key must be rotated (it was exposed in an agent transcript on 2026-11-12), so "a delivery attempt on a test issue" is not done yet.
+**Status (2026-11-12):** App `tierbound-mbt` (ID 5721292) created and installed on MohamedBenTaher (installation 181081697, Issues write + metadata read). PEM, webhook secret and App JWT helper live in `~/.config/tierbound/`. Hosted project `gdpzeenwivmluhkwjsuu` is set up per `runbooks/hosted-setup.md`: migrations applied (schema fingerprint identical to local), roles + Vault + Edge secrets set, OAuth 2.1 server on, `ingest` / `mcp` / `effect-github-comment` deployed. **Update 2026-11-12 11:47:** key rotated (new key in hosted secrets; the old key still has to be deleted on the App page), webhook active with the real secret, Issues subscribed. Test issue #1 -> delivery `issues.opened` 200 -> job enqueued on hosted: **Done when met.** Still open: installation covers all repos (limit to `tierbound`); hosted worker run needs a real `GROQ_API_KEY`.
 
 ---
 

@@ -12,6 +12,7 @@ read the files and never echo them.
 | `effector-webhook-secret` | Vault `tierbound_effector_webhook_secret` = Edge secret `EFFECTOR_WEBHOOK_SECRET` |
 | `worker-db-password` / `effector-db-password` | login passwords of `tierbound_worker` / `tierbound_effector` |
 | `hosted-functions.env` | generated input for `supabase secrets set` |
+| `hosted-approver-password` | hosted approver login (the email is the repo owner's) |
 
 ## URLs
 
@@ -58,7 +59,9 @@ read the files and never echo them.
      to **Issues**; accept the new permissions on the installation.
    - Installation scope: limit to `MohamedBenTaher/tierbound`.
 8. Approver account: sign-up is off, so create it with the Admin API
-   (service role) and own the `triage-drafter` agent with it.
+   (service role; password in `~/.config/tierbound/hosted-approver-password`)
+   and own the `triage-drafter` agent with it (same insert as `seed.sql`,
+   owner = that user's id).
 
 ## Consent page
 
@@ -69,14 +72,54 @@ publishable keys are in the page.
 
 ## Running the worker against hosted
 
+`GITHUB_READ_TOKEN` must be able to read the (private) dogfood repo. The
+simplest least-privilege token is an App installation token scoped down to
+Issues **read** on `tierbound` (valid 1 h); `GROQ_API_KEY` must be a real key.
+
 ```
-WORKER_DATABASE_URL=postgresql://tierbound_worker.gdpzeenwivmluhkwjsuu:<worker-db-password>@aws-0-eu-west-3.pooler.supabase.com:5432/postgres
+cd worker
+export GITHUB_READ_TOKEN=$(curl -s -X POST \
+  -H "Authorization: Bearer $(~/.config/tierbound/app-jwt.sh)" \
+  https://api.github.com/app/installations/181081697/access_tokens \
+  -d '{"repositories":["tierbound"],"permissions":{"issues":"read"}}' \
+  | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')
+export WORKER_DATABASE_URL="postgresql://tierbound_worker.gdpzeenwivmluhkwjsuu:$(cat ~/.config/tierbound/worker-db-password)@aws-0-eu-west-3.pooler.supabase.com:5432/postgres"
+export GROQ_API_KEY=...        # from console.groq.com, never committed
+go run ./cmd/worker -once -config config/triage-drafter.toml
 ```
 
-Keep it in `.env` (gitignored) or export it per shell; `GROQ_API_KEY`,
-`GITHUB_READ_TOKEN`, `AGENT_CONFIG_PATH` as for local.
+A job is dead-lettered after 3 failed reads (`propose.MaxAttempts`); open a
+new issue to get a fresh job.
 
 ## Rotating the App key
 
 Generate a new key on the App settings page, delete the old one, overwrite
 `github-app.pem`, regenerate `hosted-functions.env`, re-run step 4.
+
+## Verified on hosted (2026-11-12)
+
+- Issue opened -> App delivery `issues.opened` -> `ingest` 200 -> one
+  `webhook_deliveries` row and one `pgmq.q_jobs` message.
+- Worker reads the issue with the scoped installation token.
+- Not yet: LLM draft -> `proposed_action` (needs `GROQ_API_KEY`), approval
+  over MCP, the approvals trigger -> `effect-github-comment` -> comment.
+
+## Test guide: approve from Cursor
+
+1. Have a `proposed` action: run the worker (above) after opening an issue.
+2. `python3 -m http.server 3000 --directory consent` (keep it running).
+3. Cursor uses `.cursor/mcp.json` (`tierbound` ->
+   `https://gdpzeenwivmluhkwjsuu.supabase.co/functions/v1/mcp`). In Cursor
+   Settings -> MCP, enable `tierbound`; Cursor registers itself (dynamic
+   client registration) and opens the browser at
+   `http://localhost:3000/oauth/consent?authorization_id=...`.
+4. Sign in with the repo owner's email and the password from
+   `~/.config/tierbound/hosted-approver-password`, then **Approve**.
+5. In Cursor chat: `list_pending_actions`, then `get_action <id>`; check the
+   comment body and that `payload_hash` equals `recomputed_hash`, then
+   `approve_action <id> <payload_hash>`.
+6. Check: exactly one comment on the issue, ending with
+   `<!-- tierbound:<action id> -->`, posted by `tierbound-mbt[bot]`; and
+   `select status from proposed_actions where id = '<id>'` is `executed`
+   (`effects.status = 'posted'`). Approving again must be refused
+   (`action is executed, not proposed`).
