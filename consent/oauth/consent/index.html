@@ -27,7 +27,7 @@
     <p>Sign in to continue (hosted: the admin-created approver account; local: any dev account):</p>
     <input id="email" type="email" placeholder="email"><br><br>
     <input id="password" type="password" placeholder="password"><br><br>
-    <button id="do-signin">Sign in / Sign up</button>
+    <button id="do-signin">Sign in</button>
   </div>
 </div>
 <script type="module">
@@ -39,10 +39,12 @@ const BACKENDS = {
   localhost: {
     url: "https://gdpzeenwivmluhkwjsuu.supabase.co",
     key: "sb_publishable_rVoNZimCyKZZN_FygspDHw_qTSfFbQ3",
+    allowSignUp: false,
   },
   "127.0.0.1": {
     url: "http://127.0.0.1:54321",
     key: "eyJhbGciOiJFUzI1NiIsImtpZCI6ImVjMDkzYWFlLTQ3MjItNDdmZS1hYWJjLTUzYmJkNjYxMGE2NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjIxMDk0Mzk0OTN9.FhyLhPBgVPnfgmgyA3yPLX2OBoXnRHOhQ_uInW_l9smq3i4EKhdtewTz687KMzzVpDQ0m9JAcxUyTpJ3sglZNw",
+    allowSignUp: true,
   },
 };
 const backend = BACKENDS[location.hostname] ?? BACKENDS["127.0.0.1"];
@@ -84,9 +86,19 @@ async function decide(fn) {
 
 $("do-signin").addEventListener("click", async () => {
   const email = $("email").value, password = $("password").value;
-  let { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) ({ error } = await supabase.auth.signUp({ email, password }));
-  if (error) { $("status").textContent = "Sign-in failed: " + error.message; return; }
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) {
+    // Local stack only: first sign-in creates the dev account. Hosted has
+    // sign-up disabled, and a sign-up attempt would mask the real error.
+    if (backend.allowSignUp && error.code === "invalid_credentials") {
+      const { error: signUpError } = await supabase.auth.signUp({ email, password });
+      if (!signUpError) { location.reload(); return; }
+      $("status").textContent = "Sign-up failed: " + signUpError.message;
+      return;
+    }
+    $("status").textContent = "Sign-in failed: " + error.message + (error.code ? " (" + error.code + ")" : "");
+    return;
+  }
   location.reload();
 });
 $("approve").addEventListener("click", () => decide((id) => supabase.auth.oauth.approveAuthorization(id)));
