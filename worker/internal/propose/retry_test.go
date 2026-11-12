@@ -18,8 +18,7 @@ func (failingDrafter) DraftComment(_ context.Context, _, _ string) (string, erro
 // visibility timeout, and the retry produces exactly one action with the
 // later attempt recorded in the run ledger.
 func TestRetryAfterCrashKeepsOneAction(t *testing.T) {
-	evalsOK := "test-config-hash"
-	deps, agentID, cleanup := setup(t, &evalsOK)
+	deps, agentID, cleanup := setup(t, true)
 	defer cleanup()
 
 	enqueue(t, deps, Job{Repo: "MohamedBenTaher/tierbound", IssueNumber: 9, DeliveryID: "test-retry"})

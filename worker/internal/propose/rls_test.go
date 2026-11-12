@@ -13,8 +13,7 @@ import (
 // the worker role must never write approvals or effects (AGENTS.md invariant
 // 1). The build fails if any of these statements succeed.
 func TestWorkerRoleDeniedOnApprovalsAndEffects(t *testing.T) {
-	evalsOK := "test-config-hash"
-	deps, agentID, cleanup := setup(t, &evalsOK)
+	deps, agentID, cleanup := setup(t, true)
 	defer cleanup()
 	ctx := context.Background()
 

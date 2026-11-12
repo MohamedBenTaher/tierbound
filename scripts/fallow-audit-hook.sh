@@ -17,9 +17,14 @@ fi
 
 export PATH="$ROOT/node_modules/.bin:$PATH"
 
+# Local and push-to-main CI have a `main` branch; a pull_request checkout is a
+# detached merge commit, so compare against the PR's base on origin instead
+# (the lint job fetches full history for this).
 BASE_ARGS=()
-if git rev-parse --verify main >/dev/null 2>&1; then
+if git rev-parse --verify --quiet main >/dev/null; then
   BASE_ARGS=(--base main)
+elif git rev-parse --verify --quiet "origin/${GITHUB_BASE_REF:-main}" >/dev/null; then
+  BASE_ARGS=(--base "origin/${GITHUB_BASE_REF:-main}")
 fi
 
 # Prefer staged TS/JS during a real commit; for `pre-commit run --all-files` / CI
