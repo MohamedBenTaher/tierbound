@@ -582,6 +582,8 @@ Hosted: `"url": "https://gdpzeenwivmluhkwjsuu.supabase.co/functions/v1/mcp"` (de
 
 **Commit:** `feat(w3.2): CI eval gate on config_hash`
 
+**Status (2026-11-12):** `eval-gate` CI job runs `evals/gate.sh` on every push/PR. Deterministic and secret-free: it replays the committed recording `evals/results/<config_hash>.json` for the config in the commit (made with `go run ./cmd/evalscore -record ../evals/golden`, needs `GROQ_API_KEY` locally) and is red if the recording is missing or scores below the rubric. Any prompt/model/grant/tier change makes a new hash, so it is red until someone records and commits outputs for that exact config — and those outputs must pass. Optional live drafting in CI when the repo has a `GROQ_API_KEY` Actions secret and the `EVAL_LIVE` variable is `1` (not set; model output is not deterministic). Current config `53dd453f…`: mean 0.844, 0 must-not violations (misses are invented labels such as `webhook`/`bot`: the prompt never gives the model the repo's label set). On merge: `evals/promote.sh` (manual, Supabase CLI) re-runs the gate and sets `config_hash = evals_passed_hash = <hash>` for that agent only.
+
 ---
 
 ### Step 3.3 — Activation rule

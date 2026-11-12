@@ -1,0 +1,22 @@
+{
+  "config_hash": "53dd453fa89da08d50f68aa6927f352d519b6c637b43d8c42cda0a888d90c939",
+  "model": "openai/gpt-oss-20b",
+  "recorded_at": "2026-11-12T13:24:50Z",
+  "outputs": {
+    "01-ingest-bad-signature": "Summary: The recent rotation of the webhook secret results in every GitHub delivery being rejected with a 401 \"invalid signature\" error, so no payloads reach the jobs queue.  \nLikely area: Webhook signature verification in the ingest service.  \nSuggested label: bug",
+    "02-ingest-duplicate-delivery": "Summary: Redelivering an issues.opened webhook enqueues the job twice, even though the X-GitHub-Delivery header should prevent duplicates.  \nLikely area: Webhook delivery and deduplication logic.  \nSuggested label: webhook",
+    "03-worker-crash-loop": "Summary: The worker logs an error when a job body lacks an issue_number, fails to recover after three attempts, and the job appears to disappear without being dead‑lettered.  \nLikely area: Worker error handling / job queue processing.  \nSuggested label: bug",
+    "04-mcp-401-cursor": "Summary: The Cursor client cannot authenticate with the MCP server, showing “Needs login” for tierbound and never launching the browser.  \nLikely area: Authentication / MCP connection.  \nSuggested label: authentication",
+    "05-approve-wrong-hash": "Summary: The user reports that approving an action with a hash obtained from `list_pending_actions` was refused because the payload hash no longer matched, implying the payload may have changed between the listing and approval steps.  \nLikely area: Payload integrity verification during action approval.  \nSuggested label: bug",
+    "06-effector-double-comment": "Summary: Duplicate triage bot comments were posted on #12 after the outage.  \nLikely area: bot automation.  \nSuggested label: bot",
+    "07-effector-stuck-claimed": "Summary: The approval action was marked as approved, but the corresponding effects row remains in 'claimed' status with no external ID for 20 minutes and no GitHub comment appears.  \nLikely area: effects processing / action status workflow.  \nSuggested label: bug",
+    "08-rls-other-owner": "Summary: The reporter finds that `list_pending_actions` only shows actions from their own agent, not from another maintainer’s agent, and asks whether this is intended and how approvals can be shared.  \nLikely area: Agent permissions and action visibility.  \nSuggested label: needs investigation.",
+    "09-docs-hosted-setup": "Summary: The hosted setup guide omits the required Vault secrets step, causing approvals trigger to fail with “Vault secrets … are not set”.  \nLikely area: Documentation – the hosted setup guide.  \nSuggested label: documentation",
+    "10-feature-slack": "Summary: Request to send a Slack message whenever a draft is awaiting approval.  \nLikely area: Notification integration.  \nSuggested label: notifications",
+    "11-evals-flaky": "Summary: A documentation-only PR triggers the eval gate, which fails with the error “no usable recording for config_hash.”  \nLikely area: CI/CD evaluation gate.  \nSuggested label: ci",
+    "12-perf-queue-backlog": "Summary: Importing 200 issues at once causes the job queue to back up, delaying draft creation by about an hour because only one worker processes jobs sequentially.  \nLikely area: job queue / worker processing.  \nSuggested label: performance",
+    "13-security-token-scope": "Summary: The WORKER environment’s GitHub token is a classic PAT with repo scope, allowing write access that violates the repository’s intended read‑only rule.  \nLikely area: Permissions / Access control.  \nSuggested label: security",
+    "14-question-model-choice": "Summary: The user wants to know which model triage‑drafter currently uses, why that choice was made, and whether a larger model could be adopted for better summaries.  \nLikely area: Model selection / architecture.  \nSuggested label: question",
+    "15-vague-report": "Summary: The user reports that the latest version does not work while version 3 was functional.  \nLikely area: Compatibility with the new release.  \nSuggested label: bug"
+  }
+}

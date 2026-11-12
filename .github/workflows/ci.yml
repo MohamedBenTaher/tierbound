@@ -31,10 +31,20 @@ jobs:
       - name: Run pre-commit
         run: pre-commit run --all-files
 
-  # TODO W3 (IMPLEMENTATION_PLAN step 3.2): eval gate job
-  # eval-gate:
-  #   runs-on: ubuntu-latest
-  #   if: ...
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - run: ./evals/gate.sh
+  # Plan step 3.2: replays evals/results/<config_hash>.json for the agent
+  # config in this commit; red if the recording is missing or scores below
+  # evals/rubric.json. No secrets needed. If the repo has a GROQ_API_KEY
+  # Actions secret and the EVAL_LIVE variable is "1", it also drafts live.
+  eval-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: worker/go.mod
+          cache-dependency-path: worker/go.sum
+      - name: Eval gate
+        env:
+          EVAL_LIVE: ${{ vars.EVAL_LIVE }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: ./evals/gate.sh
