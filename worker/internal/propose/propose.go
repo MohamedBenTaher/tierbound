@@ -112,11 +112,13 @@ func processMessage(ctx context.Context, d Deps, msg pgmq.Message) error {
 }
 
 func attempt(ctx context.Context, d Deps, msg pgmq.Message, job Job, agent *agentRow, runID string) error {
-	// SPEC sections 2 and 5: only a draft agent whose evals_passed_hash equals
-	// its config_hash may propose. Anything else is skipped, not retried.
-	if agent.Tier != agentconfig.TierDraft ||
-		agent.EvalsPassedHash == nil || *agent.EvalsPassedHash != agent.ConfigHash {
-		reason := errors.New("agent tier/evals gate refuses to propose (SPEC section 5)")
+	configHash, err := d.Config.Hash()
+	if err != nil {
+		return err
+	}
+	// SPEC sections 2 and 5 (plan step 3.3): anything the activation rule
+	// refuses is skipped, not retried.
+	if reason := activationError(agent, configHash); reason != nil {
 		if err := finishRun(ctx, d.Pool, runID, "skipped", reason); err != nil {
 			return err
 		}
@@ -140,10 +142,6 @@ func attempt(ctx context.Context, d Deps, msg pgmq.Message, job Job, agent *agen
 	payload := map[string]any{"body": body}
 	target := map[string]any{"repo": job.Repo, "issue_number": job.IssueNumber}
 	payloadHash, err := hashing.ActionHash(KindGitHubComment, target, payload)
-	if err != nil {
-		return err
-	}
-	configHash, err := d.Config.Hash()
 	if err != nil {
 		return err
 	}
@@ -177,6 +175,22 @@ func deadLetter(ctx context.Context, d Deps, msg pgmq.Message, cause error) erro
 func FormIssueMessage(issue githubro.Issue) string {
 	return fmt.Sprintf("Repository: %s\nIssue: #%d\nTitle: %s\nLabels: %s\n\n%s",
 		issue.Repo, issue.Number, issue.Title, strings.Join(issue.Labels, ", "), issue.Body)
+}
+
+// activationError is the activation rule (SPEC section 5, plan step 3.3): a
+// draft agent may propose only when the config this worker runs is the one
+// registered for the agent (loadedHash = config_hash) and that exact hash
+// passed the eval gate (evals_passed_hash = config_hash). nil means allowed.
+func activationError(agent *agentRow, loadedHash string) error {
+	switch {
+	case agent.Tier != agentconfig.TierDraft:
+		return fmt.Errorf("activation: agent tier %q cannot propose (SPEC section 5)", agent.Tier)
+	case loadedHash != agent.ConfigHash:
+		return fmt.Errorf("activation: running config_hash %s is not the registered %s (SPEC section 5)", loadedHash, agent.ConfigHash)
+	case agent.EvalsPassedHash == nil || *agent.EvalsPassedHash != agent.ConfigHash:
+		return fmt.Errorf("activation: config_hash %s has not passed the eval gate (SPEC section 5)", agent.ConfigHash)
+	}
+	return nil
 }
 
 type agentRow struct {

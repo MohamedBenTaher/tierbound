@@ -41,7 +41,7 @@ const fakeDraftBody = "Summary: it breaks.\nLikely area: worker.\nSuggested labe
 // setup seeds one agent row (auth.users requires only id locally) and returns
 // deps wired to fakes, the agent id, and a cleanup func. Skips without
 // TEST_DATABASE_URL so `go test ./...` stays green in pre-commit.
-func setup(t *testing.T, evalsPassedHash *string) (Deps, string, func()) {
+func setup(t *testing.T, evalsPassed bool) (Deps, string, func()) {
 	t.Helper()
 	dbURL := os.Getenv("TEST_DATABASE_URL")
 	if dbURL == "" {
@@ -54,6 +54,21 @@ func setup(t *testing.T, evalsPassedHash *string) (Deps, string, func()) {
 	}
 
 	name := fmt.Sprintf("test-agent-%d", time.Now().UnixNano())
+	cfg := agentconfig.Config{
+		Name:      name,
+		Tier:      agentconfig.TierDraft,
+		Model:     "test-model",
+		Prompt:    "draft one comment",
+		ToolGrant: []string{"github.read_issues"},
+	}
+	configHash, err := cfg.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	evalsPassedHash := "stale-hash"
+	if evalsPassed {
+		evalsPassedHash = configHash
+	}
 	var ownerID string
 	if err := pool.QueryRow(ctx,
 		`insert into auth.users (id) values (gen_random_uuid()) returning id::text`,
@@ -63,20 +78,13 @@ func setup(t *testing.T, evalsPassedHash *string) (Deps, string, func()) {
 	var agentID string
 	if err := pool.QueryRow(ctx, `
 		insert into public.agents (id, owner, name, tier, config_hash, evals_passed_hash)
-		values (gen_random_uuid(), $1::uuid, $2, 'draft', 'test-config-hash', $3)
+		values (gen_random_uuid(), $1::uuid, $2, 'draft', $3, $4)
 		returning id::text`,
-		ownerID, name, evalsPassedHash,
+		ownerID, name, configHash, evalsPassedHash,
 	).Scan(&agentID); err != nil {
 		t.Fatal(err)
 	}
 
-	cfg := agentconfig.Config{
-		Name:      name,
-		Tier:      agentconfig.TierDraft,
-		Model:     "test-model",
-		Prompt:    "draft one comment",
-		ToolGrant: []string{"github.read_issues"},
-	}
 	deps := Deps{
 		Pool:    pool,
 		Queue:   pgmq.New(pool),
@@ -129,8 +137,7 @@ func countActions(t *testing.T, d Deps, agentID string) int {
 }
 
 func TestProcessOneProposesExactlyOneAction(t *testing.T) {
-	evalsOK := "test-config-hash"
-	deps, agentID, cleanup := setup(t, &evalsOK)
+	deps, agentID, cleanup := setup(t, true)
 	defer cleanup()
 
 	enqueue(t, deps, Job{Repo: "MohamedBenTaher/tierbound", IssueNumber: 7, DeliveryID: "test-1"})
@@ -175,8 +182,7 @@ func TestProcessOneProposesExactlyOneAction(t *testing.T) {
 }
 
 func TestProcessOneDuplicateRetriesStayOneAction(t *testing.T) {
-	evalsOK := "test-config-hash"
-	deps, agentID, cleanup := setup(t, &evalsOK)
+	deps, agentID, cleanup := setup(t, true)
 	defer cleanup()
 
 	job := Job{Repo: "MohamedBenTaher/tierbound", IssueNumber: 7, DeliveryID: "test-dup"}
@@ -199,8 +205,7 @@ func TestProcessOneDuplicateRetriesStayOneAction(t *testing.T) {
 }
 
 func TestProcessOneRefusesWithoutEvalsPass(t *testing.T) {
-	mismatch := "stale-hash"
-	deps, agentID, cleanup := setup(t, &mismatch)
+	deps, agentID, cleanup := setup(t, false)
 	defer cleanup()
 
 	enqueue(t, deps, Job{Repo: "MohamedBenTaher/tierbound", IssueNumber: 7, DeliveryID: "test-refuse"})
@@ -222,9 +227,25 @@ func TestProcessOneRefusesWithoutEvalsPass(t *testing.T) {
 	}
 }
 
+// Plan step 3.3: a worker running a config other than the registered (and
+// gated) one must not propose, even though the row's hashes agree.
+func TestProcessOneRefusesUnregisteredRunningConfig(t *testing.T) {
+	deps, agentID, cleanup := setup(t, true)
+	defer cleanup()
+	deps.Config.Prompt += "\nAlso promise a fix date."
+
+	enqueue(t, deps, Job{Repo: "MohamedBenTaher/tierbound", IssueNumber: 8, DeliveryID: "test-unregistered"})
+
+	if _, err := ProcessOne(context.Background(), deps); err != nil {
+		t.Fatal(err)
+	}
+	if n := countActions(t, deps, agentID); n != 0 {
+		t.Fatalf("unregistered config proposed %d actions", n)
+	}
+}
+
 func TestProcessOneDeadLettersWrongShapeJob(t *testing.T) {
-	evalsOK := "test-config-hash"
-	deps, _, cleanup := setup(t, &evalsOK)
+	deps, _, cleanup := setup(t, true)
 	defer cleanup()
 
 	// Valid JSON (pgmq stores jsonb) that is not a Job: no repo/issue_number.

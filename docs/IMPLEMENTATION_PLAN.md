@@ -596,6 +596,8 @@ Hosted: `"url": "https://gdpzeenwivmluhkwjsuu.supabase.co/functions/v1/mcp"` (de
 
 **Commit:** `feat(w3.3): require evals_passed_hash = config_hash for draft`
 
+**Status (2026-11-12): done.** The W1 check only compared the row's two columns; the worker could run any prompt as long as the row looked passed. `propose.activationError` now requires tier `draft`, **running config hash = `agents.config_hash`**, and `evals_passed_hash = config_hash`; anything else marks the run `skipped` and archives the job. Tests: `TestActivationRule` (pure, runs in CI) and DB tests `TestProcessOneRefusesWithoutEvalsPass`, `TestProcessOneRefusesUnregisteredRunningConfig`, `TestProcessOneProposesExactlyOneAction` (matching → proposes). Seed: `supabase/seed.sql` still pre-marks the shipped hash as passed for local dev; hosted rows are set by `evals/promote.sh`.
+
 ---
 
 ### Step 3.4 — Injected GitHub 500 + postmortem
