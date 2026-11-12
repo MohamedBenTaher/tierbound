@@ -1,0 +1,22 @@
+{
+  "id": "07-effector-stuck-claimed",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 107,
+    "title": "Action approved but no comment, effects row stuck in claimed",
+    "body": "The approval went through, status is approved, effects.status is 'claimed' with no external_id for 20 minutes. Nothing on GitHub.",
+    "labels": []
+  },
+  "expect": {
+    "area_any": [
+      "effector",
+      "effect",
+      "claim",
+      "lease"
+    ],
+    "label_any": [
+      "bug"
+    ]
+  },
+  "must_not_say": []
+}

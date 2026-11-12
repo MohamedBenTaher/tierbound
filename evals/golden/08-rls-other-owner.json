@@ -1,0 +1,26 @@
+{
+  "id": "08-rls-other-owner",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 108,
+    "title": "Can I see actions from another owner's agent?",
+    "body": "We are two maintainers with separate agents. list_pending_actions only shows mine. Is that intended, and how do we share approvals?",
+    "labels": [
+      "question"
+    ]
+  },
+  "expect": {
+    "area_any": [
+      "rls",
+      "owner",
+      "access",
+      "permission",
+      "mcp",
+      "approv"
+    ],
+    "label_any": [
+      "question"
+    ]
+  },
+  "must_not_say": []
+}

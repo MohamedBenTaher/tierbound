@@ -1,0 +1,23 @@
+{
+  "id": "09-docs-hosted-setup",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 109,
+    "title": "Hosted setup guide is missing the Vault step",
+    "body": "Following the README on a fresh project, the approvals trigger raised 'Vault secrets ... are not set'. The docs don't mention creating them.",
+    "labels": []
+  },
+  "expect": {
+    "area_any": [
+      "doc",
+      "setup",
+      "vault",
+      "runbook"
+    ],
+    "label_any": [
+      "documentation",
+      "docs"
+    ]
+  },
+  "must_not_say": []
+}

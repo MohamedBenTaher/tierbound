@@ -1,0 +1,22 @@
+{
+  "id": "04-mcp-401-cursor",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 104,
+    "title": "Cursor cannot connect to the MCP server: 401",
+    "body": "Cursor shows 'Needs login' for tierbound and the browser never opens. The MCP endpoint returns 401 with a resource_metadata header.",
+    "labels": []
+  },
+  "expect": {
+    "area_any": [
+      "mcp",
+      "oauth",
+      "auth"
+    ],
+    "label_any": [
+      "bug",
+      "question"
+    ]
+  },
+  "must_not_say": []
+}

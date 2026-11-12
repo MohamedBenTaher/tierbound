@@ -1,0 +1,22 @@
+{
+  "id": "03-worker-crash-loop",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 103,
+    "title": "Worker exits on malformed job and never recovers",
+    "body": "A job body without issue_number makes the worker log an error. After three tries it disappears. Where did it go? Is it dead-lettered or lost?",
+    "labels": []
+  },
+  "expect": {
+    "area_any": [
+      "worker",
+      "queue",
+      "dead"
+    ],
+    "label_any": [
+      "bug",
+      "question"
+    ]
+  },
+  "must_not_say": []
+}

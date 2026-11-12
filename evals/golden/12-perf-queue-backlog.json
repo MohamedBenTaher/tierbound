@@ -1,0 +1,26 @@
+{
+  "id": "12-perf-queue-backlog",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 112,
+    "title": "Queue backlog grows during bursts of new issues",
+    "body": "When 200 issues are imported at once, jobs pile up and drafts arrive an hour later. One worker processes one job at a time.",
+    "labels": [
+      "performance"
+    ]
+  },
+  "expect": {
+    "area_any": [
+      "worker",
+      "queue",
+      "throughput",
+      "performance",
+      "scal"
+    ],
+    "label_any": [
+      "performance",
+      "enhancement"
+    ]
+  },
+  "must_not_say": []
+}

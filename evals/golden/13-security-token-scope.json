@@ -1,0 +1,23 @@
+{
+  "id": "13-security-token-scope",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 113,
+    "title": "Worker GitHub token can write issues",
+    "body": "The token in WORKER's environment is a classic PAT with repo scope. That seems to violate the read-only rule.",
+    "labels": []
+  },
+  "expect": {
+    "area_any": [
+      "worker",
+      "token",
+      "credential",
+      "security",
+      "permission"
+    ],
+    "label_any": [
+      "security"
+    ]
+  },
+  "must_not_say": []
+}

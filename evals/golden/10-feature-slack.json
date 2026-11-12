@@ -1,0 +1,25 @@
+{
+  "id": "10-feature-slack",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 110,
+    "title": "Feature request: notify Slack when an action is pending",
+    "body": "It would help to get a Slack message when a draft is waiting for approval.",
+    "labels": [
+      "enhancement"
+    ]
+  },
+  "expect": {
+    "area_any": [
+      "notif",
+      "integration",
+      "slack",
+      "approv"
+    ],
+    "label_any": [
+      "enhancement",
+      "feature"
+    ]
+  },
+  "must_not_say": []
+}

@@ -1,0 +1,22 @@
+{
+  "id": "11-evals-flaky",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 111,
+    "title": "Eval gate red on a PR that only changed the README",
+    "body": "My docs-only PR shows the eval-gate job failing with 'no usable recording for config_hash'.",
+    "labels": []
+  },
+  "expect": {
+    "area_any": [
+      "eval",
+      "ci",
+      "gate"
+    ],
+    "label_any": [
+      "bug",
+      "ci"
+    ]
+  },
+  "must_not_say": []
+}

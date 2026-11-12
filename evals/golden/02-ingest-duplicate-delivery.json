@@ -1,0 +1,25 @@
+{
+  "id": "02-ingest-duplicate-delivery",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 102,
+    "title": "Redelivered webhook creates a second job",
+    "body": "Clicking Redeliver on an issues.opened delivery seems to enqueue the issue twice. I expected the X-GitHub-Delivery id to dedupe it.",
+    "labels": [
+      "bug"
+    ]
+  },
+  "expect": {
+    "area_any": [
+      "ingest",
+      "webhook",
+      "queue",
+      "dedup",
+      "idempot"
+    ],
+    "label_any": [
+      "bug"
+    ]
+  },
+  "must_not_say": []
+}

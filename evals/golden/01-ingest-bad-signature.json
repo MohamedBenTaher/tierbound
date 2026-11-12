@@ -1,0 +1,21 @@
+{
+  "id": "01-ingest-bad-signature",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 101,
+    "title": "ingest returns 401 for every GitHub delivery",
+    "body": "Since rotating the webhook secret, every delivery in the App's Recent Deliveries shows 401 \"invalid signature\". Nothing reaches the jobs queue.",
+    "labels": []
+  },
+  "expect": {
+    "area_any": [
+      "ingest",
+      "webhook",
+      "signature"
+    ],
+    "label_any": [
+      "bug"
+    ]
+  },
+  "must_not_say": []
+}

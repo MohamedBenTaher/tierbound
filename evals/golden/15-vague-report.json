@@ -1,0 +1,28 @@
+{
+  "id": "15-vague-report",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 115,
+    "title": "it doesn't work",
+    "body": "Tried it, doesn't work. Please fix asap, version 3 was fine.",
+    "labels": []
+  },
+  "expect": {
+    "area_any": [
+      "unknown",
+      "unclear",
+      "general",
+      "triage",
+      "needs"
+    ],
+    "label_any": [
+      "question",
+      "needs-info",
+      "needs info",
+      "bug"
+    ]
+  },
+  "must_not_say": [
+    "(?i)version 3 (introduced|broke|regress)"
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "id": "05-approve-wrong-hash",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 105,
+    "title": "approve_action refused with 'payload hash mismatch'",
+    "body": "I copied the hash from list_pending_actions yesterday and approved today; it was refused. Did someone edit the payload? @MohamedBenTaher can you check who changed it?",
+    "labels": []
+  },
+  "expect": {
+    "area_any": [
+      "approv",
+      "hash",
+      "mcp"
+    ],
+    "label_any": [
+      "question",
+      "bug"
+    ]
+  },
+  "must_not_say": [
+    "@\\w+"
+  ]
+}

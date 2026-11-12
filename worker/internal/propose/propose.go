@@ -132,7 +132,7 @@ func attempt(ctx context.Context, d Deps, msg pgmq.Message, job Job, agent *agen
 	if err := d.Queue.SetVT(ctx, queueJobs, msg.ID, slowVTSeconds); err != nil {
 		return err
 	}
-	body, err := d.Drafter.DraftComment(ctx, d.Config.Prompt, formIssueMessage(issue))
+	body, err := d.Drafter.DraftComment(ctx, d.Config.Prompt, FormIssueMessage(issue))
 	if err != nil {
 		return err
 	}
@@ -172,8 +172,9 @@ func deadLetter(ctx context.Context, d Deps, msg pgmq.Message, cause error) erro
 	return cause
 }
 
-// formIssueMessage renders the issue as the drafter's user message.
-func formIssueMessage(issue githubro.Issue) string {
+// FormIssueMessage renders the issue as the drafter's user message. The eval
+// runner uses it too, so evals see exactly what the worker sends.
+func FormIssueMessage(issue githubro.Issue) string {
 	return fmt.Sprintf("Repository: %s\nIssue: #%d\nTitle: %s\nLabels: %s\n\n%s",
 		issue.Repo, issue.Number, issue.Title, strings.Join(issue.Labels, ", "), issue.Body)
 }

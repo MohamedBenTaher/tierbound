@@ -1,0 +1,26 @@
+{
+  "id": "14-question-model-choice",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 114,
+    "title": "Which model does triage-drafter use and why?",
+    "body": "Curious about the model choice and whether we can switch to a bigger one for better summaries.",
+    "labels": [
+      "question"
+    ]
+  },
+  "expect": {
+    "area_any": [
+      "config",
+      "model",
+      "agent",
+      "llm"
+    ],
+    "label_any": [
+      "question"
+    ]
+  },
+  "must_not_say": [
+    "(?i)gpt-4|claude|llama ?3"
+  ]
+}

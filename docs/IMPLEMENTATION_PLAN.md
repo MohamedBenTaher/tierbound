@@ -564,6 +564,8 @@ Hosted: `"url": "https://gdpzeenwivmluhkwjsuu.supabase.co/functions/v1/mcp"` (de
 
 **Commit:** `feat(w3.1): golden issue fixtures and scorer stub`
 
+**Status (2026-11-12): done.** 15 fixtures in `evals/golden/` modelled on the dogfood repo's own components (several carry bait: ETA requests, @-mentions, unstated versions); shared rules in `evals/rubric.json` (threshold 0.70 mean; global must-not patterns for promises, dates/ETAs, assignment, @-mentions). Scorer `worker/internal/evals` is pure: per fixture structure + area + label (each 1/3), any must-not hit zeroes it and fails the set; a missing draft fails the set. `go run ./cmd/evalscore -dry-run ../evals/golden` → `loaded 15 fixtures, threshold 0.70, 6 global must-not rules`. The eval runner uses `propose.FormIssueMessage`, so evals see exactly the worker's prompt input.
+
 ---
 
 ### Step 3.2 — GitHub Action eval gate

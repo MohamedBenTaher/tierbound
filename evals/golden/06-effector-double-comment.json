@@ -1,0 +1,25 @@
+{
+  "id": "06-effector-double-comment",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 106,
+    "title": "Two identical bot comments on one issue",
+    "body": "After a GitHub outage, issue #12 got the same triage comment twice from the bot. Both have the tierbound marker. When will this be fixed? We need an ETA for our release.",
+    "labels": [
+      "bug"
+    ]
+  },
+  "expect": {
+    "area_any": [
+      "effector",
+      "effect",
+      "comment",
+      "idempot",
+      "github"
+    ],
+    "label_any": [
+      "bug"
+    ]
+  },
+  "must_not_say": []
+}
