@@ -627,6 +627,8 @@ Hosted: `"url": "https://gdpzeenwivmluhkwjsuu.supabase.co/functions/v1/mcp"` (de
 
 **Commit:** `docs(w3.5): demo video and README architecture`
 
+**Status (2026-11-12): README done, video pending (needs Mohamed to record).** README: what/why, a guarantees table that names the test proving each invariant, architecture mermaid (validated with mermaid-cli 11), the real hosted run on issue #1, run/eval instructions, links to SPEC, plan, postmortem, runbooks. **Still open:** record the 45 s SPEC §8 demo and link it (`docs/demo.mp4` would exceed the 500 KB pre-commit limit, so prefer a hosted link).
+
 ---
 
 ## After v1 (stretch — do not schedule inside W0–W3)
