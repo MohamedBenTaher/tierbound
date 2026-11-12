@@ -422,6 +422,8 @@ verify_jwt = false   # middleware verifies; discovery must stay public
 | `get_action` | `action_id` | payload, payload_hash, agent config_hash |
 | `approve_action` | `action_id`, `payload_hash` | refuse if hash ≠ recomputed `{kind, target, payload}` hash; insert approvals |
 | `reject_action` | `action_id`, `reason` | insert rejection |
+
+(Since 2026-11-12 both decisions go through `public.tierbound_decide_action` — see "Atomic decisions" under step 2.4.)
 | `get_run` | `run_id` | run ledger row |
 
 **Reference pattern** (from Supabase BYO MCP docs):
@@ -517,7 +519,7 @@ All green against local Supabase (verified 2026-11-11). Without the env the scri
 
 **Hash scope (follow-up, 2026-11-12):** `payload_hash` originally covered only `{body}`, so editing `target` after approval would have posted approved text on another issue. It now covers `{kind, target, payload}` in the worker, `mcp` and the effector; `reject_action` stores the real hash instead of `""`. Proven by `TestActionHashGoldenVectors` (Go) and `TestTypeScriptActionHashMatchesGoldenVectors` (TS, through `get_action`) on the same `testdata/action_hash_vectors.json`, plus `TestRetargetAfterApprovalRefusedByEffector`, `TestRetargetThenApproveWithOldHashRefused` and `TestRejectStoresActionHash`. No migration: there is no DB-side hashing. Rows proposed before this change carry the old hash and are refused at approve; re-propose them (or `supabase db reset`). `kind` cannot be changed in SQL in v1 (check constraint), so only the unit test exercises it.
 
-Still open (not fixed here): `recordDecision` in `mcp` inserts the approval and updates the status as two PostgREST calls (not atomic; a failed update leaves an approved row with status `proposed` — harmless to the effector, which only trusts `approvals`); and the owner update policy on `proposed_actions` lets the owner change any column, not just `status` — the hash now catches payload/target edits, but a security-definer `approve`/`reject` RPC would fix both.
+**Atomic decisions + owner-edit hole (RESOLVED 2026-11-12, migration `20261112010000_decide_action.sql`):** approve/reject used to be two PostgREST calls (insert approval, then update status), and owners could UPDATE any `proposed_actions` column and INSERT `approvals` directly. Now `public.tierbound_decide_action(action_id, decision, expected_hash, reason)` — `security definer` because it must do what `authenticated` no longer may; empty `search_path`, explicit `auth.uid()` owner check, EXECUTE for `authenticated` only — locks the row (`for update`), checks owner, `status = 'proposed'`, and for approvals that `expected_hash` = stored `payload_hash` = hash recomputed in SQL (`tierbound_action_hash`, pinned to the golden vectors), then inserts the approval and sets the status in one transaction. Refusals use PostgREST `PT404`/`PT409`/`PT403` (clean 4xx). The owner update policy on `proposed_actions` and the owner insert policy on `approvals` are dropped and the grants revoked. Tests: `TestConcurrentApproveAndRejectYieldOneDecision` (10 concurrent approve/reject → exactly one decision; green 11/11 runs), `TestDoubleApproveRefusedCleanly`, `TestOwnerCannotEditActionsOrWriteApprovals` (PATCH payload/target/status denied, direct approval insert denied, non-owner sees "not found"), `TestSQLActionHashMatchesGoldenVectors`. Verified from scratch with `supabase db reset` (all 7 migrations + seed applied cleanly).
 
 **Commit:** `test(w2.4): hash tamper and RLS commitment denial`
 

@@ -95,7 +95,7 @@ One pgmq queue: `jobs`.
 
 ### Roles & RLS
 - **worker role:** INSERT on `runs`, `proposed_actions` only. No access to `approvals` or `effects`. GitHub token is read-only.
-- **approver (authenticated user):** via MCP only; can write `approvals` for actions they own (RLS on owner).
+- **approver (authenticated user):** via MCP only; reads their own actions (RLS on owner) and decides only through the `security definer` function `tierbound_decide_action`, which locks the action, checks owner + `status = 'proposed'` + hash (recomputed in SQL), inserts the `approvals` row and sets the status in one transaction. No direct write grants on `proposed_actions` or `approvals`.
 - **effector role:** the only role that can write `effects`; holds the GitHub App key as an Edge Function secret (Vault holds the webhook URL + shared secret).
 - Everything RLS-scoped to `owner`.
 - An agent whose tier is `draft` won't run unless `evals_passed_hash = config_hash`.
@@ -109,8 +109,8 @@ One pgmq queue: `jobs`.
 - **`mcp`**: remote MCP server (Streamable HTTP) behind Supabase Auth OAuth 2.1. Tools:
   - `list_pending_actions()`
   - `get_action(action_id)`: returns payload, payload_hash, the agent's config_hash
-  - `approve_action(action_id, payload_hash)`: **refused** if the hash ≠ the recomputed hash of the stored `{kind, target, payload}`
-  - `reject_action(action_id, reason)`
+  - `approve_action(action_id, payload_hash)`: **refused** if the hash ≠ the recomputed hash of the stored `{kind, target, payload}`, or if the action was already decided (atomic, via `tierbound_decide_action`)
+  - `reject_action(action_id, reason)`: same function; records the hash of what was rejected
   - `get_run(run_id)`
 - **`effect-github-comment`**: fired by a DB webhook on approval.
   1. Recompute sha256 of the canonical `{kind, target, payload}` envelope.
