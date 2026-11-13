@@ -20,7 +20,7 @@ read the files and never echo them.
 - GitHub webhook target: `https://gdpzeenwivmluhkwjsuu.supabase.co/functions/v1/ingest`
 - MCP server: `https://gdpzeenwivmluhkwjsuu.supabase.co/functions/v1/mcp`
 - OAuth metadata: `https://gdpzeenwivmluhkwjsuu.supabase.co/auth/v1/.well-known/oauth-authorization-server`
-- Consent page: `http://localhost:3000/oauth/consent` (served locally, see below)
+- Consent page: `https://mohamedbentaher.github.io/tierbound/oauth/consent` (GitHub Pages, see below)
 - Pooler: `aws-0-eu-west-3.pooler.supabase.com`, user `<role>.gdpzeenwivmluhkwjsuu`;
   port 5432 (session, the Go worker: pgx prepares statements) or 6543
   (transaction, the effector: `prepare: false`)
@@ -65,7 +65,7 @@ read the files and never echo them.
 
 ## Consent page
 
-Until GitHub Pages is on (plan "Setup smoothing" S.1), run `python3 -m http.server 3000 --directory consent` and let the OAuth client open it. Hosted Auth redirects to `site_url` (`http://localhost:3000`, later the Pages URL), and the local stack to `http://127.0.0.1:3000`. The page picks its backend by hostname, and it contains only publishable keys.
+Served by GitHub Pages (`.github/workflows/consent-pages.yml`, runs on changes to `consent/` while the repo variable `CONSENT_PAGES` is `true`). Hosted Auth redirects to `site_url` (`https://mohamedbentaher.github.io/tierbound`), so no local server is needed. The local stack still uses `python3 -m http.server 3000 --directory consent` opened as `http://127.0.0.1:3000`. The page picks its backend by hostname, and it contains only publishable keys.
 
 ## GitHub sign-in (plan S.2)
 
@@ -123,14 +123,14 @@ Generate a new key on the App settings page, delete the old one, overwrite
 ## Test guide: approve from Cursor
 
 1. Have a `proposed` action: run the worker (above) after opening an issue.
-2. `python3 -m http.server 3000 --directory consent` (keep it running).
+2. Nothing to run: the consent page is on GitHub Pages.
 3. Cursor uses `.cursor/mcp.json` (`tierbound` ->
    `https://gdpzeenwivmluhkwjsuu.supabase.co/functions/v1/mcp`). In Cursor
    Settings -> MCP, enable `tierbound`; Cursor registers itself (dynamic
    client registration) and opens the browser at
-   `http://localhost:3000/oauth/consent?authorization_id=...`.
-4. Sign in with the repo owner's email and the password from
-   `~/.config/tierbound/hosted-approver-password`, then **Approve**.
+   `https://mohamedbentaher.github.io/tierbound/oauth/consent?authorization_id=...`.
+4. **Sign in with GitHub** (allowlisted accounts only), then **Approve**.
+   Fallback: the owner's email and `~/.config/tierbound/hosted-approver-password`.
 5. In Cursor chat: `list_pending_actions`, then `get_action <id>`; check the
    comment body and that `payload_hash` equals `recomputed_hash`, then
    `approve_action <id> <payload_hash>`.
