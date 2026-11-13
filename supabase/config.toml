@@ -432,8 +432,9 @@ project_id = "gdpzeenwivmluhkwjsuu"
 [remotes.hosted.auth]
 # The consent page (consent/) picks the hosted backend when opened as
 # localhost or from GitHub Pages, the local stack as 127.0.0.1. Moving it to
-# Pages = change site_url to the Pages URL (plan "Setup smoothing", B1).
-site_url = "http://localhost:3000"
+# Served from GitHub Pages (consent-pages workflow); localhost:3000 stays in
+# the redirect list as a fallback for offline/local testing.
+site_url = "https://mohamedbentaher.github.io/tierbound"
 # GitHub sign-in returns to the consent page with its ?authorization_id.
 additional_redirect_urls = ["http://localhost:3000/**", "https://mohamedbentaher.github.io/**"]
 # Sign-up is "open", but the before-user-created hook rejects every new user
