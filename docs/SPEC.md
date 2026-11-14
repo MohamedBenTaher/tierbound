@@ -47,6 +47,7 @@
 BigQuery or any warehouse · web dashboard · multiple agents · multiple action types · Slack/email · auto-approve / auto-execute tier · commitment tier (exists only as a denial test) · generic tool registry · custom OAuth server · agent frameworks (LangGraph etc.) · multi-tenancy beyond owner-scoped RLS · Kubernetes.
 
 ### Later (stretch, after v1 ships)
+- **v2 action kinds** (designed in [V2_ACTIONS.md](V2_ACTIONS.md), Phases 4–8 of the plan): `github_issue`, `github_pr_review` (`review-pr`), `github_report` (`review-repo`), `github_pr_fix` (draft PRs only), under tiers `draft` < `gate` < `code` with eval-earned capabilities
 - Small GCP/BigQuery export of the run ledger (the AI Platform JD mentions a GCP warehouse)
 - Supabase template (`supabase init`-style one command)
 - Upstream issue/PR on Supabase's MCP server (e.g. tier-scoped tool grants)
@@ -205,3 +206,18 @@ Write it up as `docs/postmortem-001.md` (timeline, impact, root cause, fix, test
 2. **Auth design:** why agent clients get OAuth 2.1 + per-owner RLS instead of a service key, and why the worker never holds a write credential.
 3. **Approve-then-tamper:** why approvals bind to a payload hash, not a job id.
 4. **Eval regression:** CI blocked a prompt change that started promising fixes in comments.
+
+---
+
+## 12. v2: more action kinds (design summary)
+
+Full design: [V2_ACTIONS.md](V2_ACTIONS.md). The invariant doesn't change: propose → approve the exact hash over MCP → execute exactly once, with no write credential in the worker.
+
+| Kind | Agent | Tier | Effect | Key safety rule |
+| --- | --- | --- | --- | --- |
+| `github_issue` | any | `draft` | one issue | marker dedupe; unknown labels refused |
+| `github_pr_review` | `review-pr` | `draft` (`gate` to block) | one review + optional `tierbound/review` status | findings grounded by code; blocking needs the eval-earned `block` capability **and** approval; moved head → `stale` |
+| `github_report` | `review-repo` | `draft` | create/update one tracking issue | deterministic tools are the evidence; every item cites a fingerprint; no change → no action |
+| `github_pr_fix` | `pr-fix` | `code` | branch `tierbound/fix-<action_id>` + **draft** PR | tree derived from the hashed diff at a pinned `base_sha`; denylist and size limits; separate fixer App; never merges or touches `main` |
+
+Tiers and capabilities are enforced by a `before insert` trigger on `proposed_actions`. Three GitHub Apps (reader, speaker, fixer) cap each key's power. Deterministic scanners run in GitHub Actions; the LLM and proposals stay in the worker; writes stay in the effectors.

@@ -27,12 +27,24 @@ Anything still marked **verify** must be confirmed against live docs or a local 
 3.1 → 3.2 → 3.3 → 3.4 → 3.5
          ↓
 After v1 (optional, do not start before demo video exists)
+         ↓
+v2 action kinds (docs/V2_ACTIONS.md), after the demo video:
+4.1 → 4.2 → 4.3 → 4.4 → 4.5          kinds framework + github_issue
+         ↓
+5.1 → 5.2 → 5.3 → 5.4 → 5.5          review-pr (non-blocking)
+         ↓
+6.1 → 6.2                            review-pr blocking
+         ↓
+7.1 → 7.2 → 7.3 → 7.4                review-repo (reuses 5.1 evidence + 4.3 issue effect)
+         ↓
+8.1 → 8.2 → 8.3 → 8.4 → 8.5          pr-fix (last: highest blast radius)
 ```
 
 - Weekend 1 does **not** need OAuth or MCP.
 - Weekend 2 needs Weekend 1's tables, roles, and at least one real `proposed_action`.
 - Weekend 3 needs Weekend 2's approve → effect path working locally.
 - Do not add BigQuery, a web UI, or a second action type until After v1.
+- v2 (Phases 4–8) starts only after the demo video exists. Its order is argued in Phase 4's intro.
 
 ---
 
@@ -693,6 +705,272 @@ Rejected options:
 - Email+password still works.
 
 **Status (2026-11-12):** code side done (migration, hook test, config, push script, consent button, Pages workflow). Hosted is not pushed yet: it needs the OAuth App credentials from step 2, and the CLI requires the owner to confirm hosted mutations.
+
+---
+
+## v2 — more action kinds (Phases 4–8, design: [V2_ACTIONS.md](V2_ACTIONS.md))
+
+**Goal:** Four new kinds (`github_issue`, `github_pr_review`, `github_report`, `github_pr_fix`) behind the same invariant: propose → approve the exact hash over MCP → effector executes exactly once, with no write credential in the worker.
+
+**Order: issue → review-pr → review-repo → pr-fix.** This differs from issue → review_pr → pr_fix → review_repo on purpose:
+- **`github_issue` first:** it's the smallest new effect. It forces the kind/tier/capability framework, and `review-repo` reuses it for its report issue.
+- **`review-pr` next:** it introduces PR ingestion, the Actions evidence pipeline, the grounding validator and capability-gated blocking, all without contents write.
+- **`review-repo` third:** with 5.1 (evidence) and 4.3 (issue effect) already in place, it's mostly fingerprints and dedup.
+- **`pr-fix` last:** it has the largest blast radius (a new App with contents write, git data API, patch application). By then `review-pr` exists to review the fix PRs it opens.
+
+**Sizing:** Phase 4 = one weekend, 5 = one, 6 = half, 7 = one, 8 = two. About 5.5 weekends.
+
+**Before Phase 4:** update AGENTS.md invariant 5 ("multiple action types" moves from out of scope to v2 under the kind policy) and invariant 1 (the worker holds only the read-only App key). Commit this as its own step: `docs(w4.0): AGENTS.md invariants for v2`.
+
+### Phase 4 — Weekend 4: kinds framework + `github_issue`
+
+#### Step 4.1 — Kind policy, tiers, capabilities
+
+**Goal:** The database, not the worker, decides which agent may propose which kind.
+
+**Files:** `supabase/migrations/<ts>_kind_policy.sql`: the `agent_tier` + `gate`/`code`, `kind_policy`, `agent_capabilities`, `runs.config_hash`, `action_status` + `stale`, `effects.progress` changes and the `before insert` trigger on `proposed_actions`. Also `evals/promote.sh`, which writes the `propose` capability, and e2e tests.
+
+**Done when:** `TestReviewAgentCannotProposePRFix` and `TestDraftAgentCannotBlock` pass: the insert is refused by the trigger, with the error naming the kind and tier. All v1 e2e tests are still green.
+
+**Commit:** `feat(w4.1): kind policy, tiers and capabilities enforced in SQL`
+
+#### Step 4.2 — Hash vectors for every new kind
+
+**Goal:** Go, TS and SQL agree on all five kinds before any effector exists.
+
+**Files:** `testdata/action_hash_vectors.json` (one or more vectors per kind, including a 100 KB diff payload and unicode in titles), plus the existing three hash tests.
+
+**Done when:** `TestSQLActionHashMatchesGoldenVectors`, `TestTypeScriptActionHashMatchesGoldenVectors` and `go test ./internal/hashing` pass with the new vectors.
+
+**Commit:** `test(w4.2): action hash vectors for v2 kinds`
+
+#### Step 4.3 — `effect-github`: shared claim + `github_issue`
+
+**Goal:** One speaker effector routes by kind. The comment path is unchanged, and the issue path is exactly once.
+
+**Files:**
+- `supabase/functions/effect-github/` (renamed from `effect-github-comment`, plus `claim.ts`, `kinds/comment.ts`, `kinds/issue.ts`);
+- the trigger migration (routes by `kind_policy.effector`);
+- the fake GitHub: `POST /issues`, label list, issues by creator.
+
+**Done when:**
+- `TestIssueCreatedExactlyOnce` (8 concurrent invocations + webhook → one issue) passes.
+- `TestIssueTimeoutAfterSuccessRecordsExisting` passes.
+- `TestUnknownLabelRefused` passes.
+- The v1 comment tests pass unchanged.
+
+**Commit:** `feat(w4.3): effect-github routes by kind; github_issue exactly once`
+
+#### Step 4.4 — MCP renders every kind
+
+**Goal:** The approver sees exactly what will be written, rendered by trusted code.
+
+**Files:** `supabase/functions/mcp/render/*.ts` (one renderer per kind), the MCP resources `tierbound://actions/<id>/…`, the `kind` filter on `list_pending_actions`, and MCP tests.
+
+**Done when:** for one stored action per kind, `get_action` returns the expected markdown (a snapshot test). The resource returns bytes equal to the hashed payload field, and the hash is unchanged by rendering.
+
+**Commit:** `feat(w4.4): kind-aware get_action and exact-bytes MCP resources`
+
+#### Step 4.5 — Read-only App for the worker
+
+**Goal:** The worker's key can't mint a write token (V2_ACTIONS §3).
+
+**Owner clicks:**
+1. Register `tierbound-reader` with Contents, Issues, Pull requests and Actions **read**, plus Metadata read.
+2. Install it on `tierbound` only.
+3. Save the key to `~/.config/tierbound/reader-app.pem` (chmod 600).
+
+**Files:** `worker/internal/githubro` mints its own installation token from the reader App. Remove `GITHUB_READ_TOKEN` from the runbook and `scripts/demo.sh`.
+
+**Done when:**
+- The worker proposes against hosted using only the reader key.
+- A test asserts the minted token's permissions are all `read` (from the access-token response).
+- `GITHUB_READ_TOKEN` is gone from docs and scripts.
+
+**Commit:** `feat(w4.5): worker reads GitHub through a read-only App`
+
+### Phase 5 — Weekend 5: `review-pr` (non-blocking)
+
+#### Step 5.1 — Evidence workflow
+
+**Goal:** Deterministic tools run in Actions and publish normalized evidence.
+
+**Files:** `.github/workflows/tierbound-evidence.yml` (pull_request: fallow, golangci-lint, gosec on changed files) and `scripts/evidence/normalize` (Go; outputs `evidence.json` with fingerprints). Also `evals/evidence/` fixtures.
+
+**Done when:**
+- A PR produces an `evidence.json` artifact.
+- The normalizer is unit-tested: stable fingerprints across line moves, and no secret values stored.
+
+**Commit:** `feat(w5.1): evidence workflow and normalized findings`
+
+#### Step 5.2 — PR jobs from `ingest`
+
+**Goal:** One review job per `(pr, head_sha)` once the evidence exists.
+
+**Files:** `supabase/functions/ingest` (`pull_request`, `workflow_run`; join on `head_sha`; idempotent on delivery id and `head_sha`), and the App webhook events (owner click: subscribe to Pull request and Workflow run).
+
+**Done when:** `TestReviewJobEnqueuedOncePerHeadSha` passes: duplicate deliveries, and either arrival order of the two events, still produce one job.
+
+**Commit:** `feat(w5.2): ingest enqueues PR review jobs`
+
+#### Step 5.3 — Worker `review-pr` with grounding
+
+**Goal:** Findings that cite a diff line, a verbatim rule and existing evidence, or are dropped.
+
+**Files:**
+- `worker/config/review-pr.toml` (prompt, model, rule sources, `review-policy`);
+- `worker/internal/review` (inputs at `base_sha`, findings schema, `ground()` validator, policy verdict, COMMENT only in this phase).
+
+**Done when:**
+- `TestUngroundedFindingDropped` passes (three cases: a line outside the diff, a quote not verbatim, an unknown evidence id).
+- `TestVerdictIsPolicyNotModel` passes.
+- The run ledger counts dropped findings.
+
+**Commit:** `feat(w5.3): review-pr proposes grounded findings`
+
+#### Step 5.4 — `github_pr_review` effect
+
+**Goal:** One review (and one status) per approved action. A moved head writes nothing.
+
+**Files:** `supabase/functions/effect-github/kinds/review.ts`, using `effects.progress`. Fake GitHub reviews and statuses.
+
+**Done when:**
+- `TestReviewOnMovedHeadIsStale` passes, with zero writes.
+- `…OneReview` passes (8 concurrent invocations).
+- `TestReviewPostedStatusFailedRetriesStatusOnly` passes.
+
+**Commit:** `feat(w5.4): github_pr_review effect, stale on moved head`
+
+#### Step 5.5 — Golden PRs + `propose` capability
+
+**Goal:** Precision, recall and grounding measured on ~20 recorded PRs.
+
+**Files:** `evals/review-pr/golden/*.json` (12 with seeded violations, 8 clean), a scorer in `worker/internal/evals`, recordings per `config_hash`, and an `eval-gate` matrix entry.
+
+**Done when:**
+- CI is red for a recording below precision 0.70, recall 0.50 or grounding 0.90, and green above.
+- `promote.sh` grants `propose` only on green.
+
+**Commit:** `feat(w5.5): review-pr golden set and eval gate`
+
+### Phase 6 — Weekend 6 (half): blocking reviews
+
+#### Step 6.1 — `block` capability
+
+**Goal:** `REQUEST_CHANGES` / `failure` is possible only for a config that passed the stricter bar.
+
+**Files:** the scorer's blocker metrics, `promote.sh` (`block` at blocker precision ≥ 0.90, zero false blocks on the clean set, blocker recall ≥ 0.60), and trigger tests.
+
+**Done when:**
+- `TestBlockingReviewRefusedWithoutCapability` passes (the insert is refused).
+- `TestBlockingReviewNeedsApproval` passes (no status until approved).
+- A config that only clears `propose` still posts COMMENT reviews.
+
+**Commit:** `feat(w6.1): blocking reviews require the block capability`
+
+#### Step 6.2 — Required status (opt-in)
+
+**Owner click** (open question 1 in V2_ACTIONS §10): branch protection on `main` requires `tierbound/review`.
+
+**Done when:** the demo PR (`grant insert on approvals to tierbound_worker`) is blocked with a red `tierbound/review` citing AGENTS.md invariant 1 after approval. A clean PR goes green after approval.
+
+**Commit:** `docs(w6.2): required tierbound/review status and runbook`
+
+### Phase 7 — Weekend 7: `review-repo`
+
+#### Step 7.1 — Scheduled scan
+
+**Files:** `.github/workflows/tierbound-scan.yml` (weekly + `workflow_dispatch`: fallow, golangci-lint, gosec, semgrep, govulncheck/OSV, gitleaks → `evidence.json`).
+
+**Done when:** a scan artifact exists for `main`. A planted fake secret is reported with path, line and rule only (the test greps the artifact for the value: 0 hits).
+
+**Commit:** `feat(w7.1): scheduled repo scan evidence`
+
+#### Step 7.2 — Worker `review-repo`
+
+**Files:** `worker/config/review-repo.toml`, `worker/internal/report` (citation validator, fingerprint set diff against the tracking issue's machine block, public/private split for security items).
+
+**Done when:**
+- `TestRepoReviewRerunProposesNothing` passes.
+- `TestUncitedReportItemDropped` passes.
+- `TestSecurityDetailsNotInPublicBody` passes.
+
+**Commit:** `feat(w7.2): review-repo synthesizes cited, deduped reports`
+
+#### Step 7.3 — `github_report` effect
+
+**Files:** `supabase/functions/effect-github/kinds/report.ts` (create = the issue path; update = PATCH guarded by `base_body_sha256`).
+
+**Done when:**
+- `TestReportUpdateStaleWhenBodyEdited` passes (zero writes).
+- `…OneReportUpdate` passes (concurrent invocations).
+
+**Commit:** `feat(w7.3): github_report create/update exactly once`
+
+#### Step 7.4 — Eval + triggers
+
+**Files:** `evals/review-repo/` (8 evidence sets; fabrication = 0, coverage ≥ 0.9, public leak = 0), a `pg_cron` weekly enqueue, and the MCP `request_repo_review`.
+
+**Done when:** the gate is red on a recording with one fabricated item and green on the clean one. The weekly job enqueues exactly one job per repo per week.
+
+**Commit:** `feat(w7.4): review-repo eval gate and schedule`
+
+### Phase 8 — Weekends 8–9: `pr-fix`
+
+#### Step 8.1 — Fixer App + checks-before-writes skeleton
+
+**Owner clicks:**
+1. Register `tierbound-fixer` with Contents write, Pull requests write and Metadata read.
+2. Install it on `tierbound` only, and add its key as an Edge Function secret for `effect-github-pr` only.
+3. Branch protection on `main`: require a PR, no bypass for the App, no force-push or deletion.
+
+**Files:** `supabase/functions/effect-github-pr/` (hash, claim, policy, freshness via compare; no writes yet).
+
+**Done when:**
+- `TestBaseMovedOnTouchedFileIsStaleWithZeroWrites` passes.
+- `TestDenylistedPathRefused` passes (`.github/workflows/x.yml`, `.env`, `go.mod`).
+- `TestOversizedDiffRefused` passes.
+- `TestSecretInDiffRefusedAtEffect` passes.
+- The fake GitHub records zero write calls.
+
+**Commit:** `feat(w8.1): effect-github-pr refuses before any write`
+
+#### Step 8.2 — Zero-fuzz patch apply, shared vectors
+
+**Files:** `supabase/functions/effect-github-pr/patch.ts`, a Go twin in `worker/internal/patch`, and `testdata/patch_vectors.json` (applies; context mismatch; removed-line mismatch; CRLF; no trailing newline; delete file; new file; binary → refused).
+
+**Done when:** Go and TS produce identical output bytes or identical refusals for every vector.
+
+**Commit:** `feat(w8.2): zero-fuzz unified diff apply in Go and TS`
+
+#### Step 8.3 — Git data API write path
+
+**Files:** `effect-github-pr` (blobs → tree → commit with dates fixed to `decided_at` → create ref → draft PR) and the fake git data API.
+
+**Done when:**
+- `TestPRFixWritesExactlyTheApprovedDiff` passes: the tree equals base + diff.
+- `TestTamperedDiffRefused` passes.
+- `TestCrashBetweenRefAndPRCompletesOnce` passes.
+- `…OnePR` passes (8 concurrent invocations).
+- `TestPRFixNeverWritesOutsideItsBranch` passes: the fake fails on any merge, update-ref or non-`tierbound/fix-*` ref.
+
+**Commit:** `feat(w8.3): draft PR from the approved diff, exactly once`
+
+#### Step 8.4 — Worker `pr-fix`
+
+**Files:** `worker/config/pr-fix.toml` (tier `code`), `worker/internal/fix` (base_sha pin, context gathering via the reader App, diff generation, pre-validation with `internal/patch` and the denylist), and `request_fix` (MCP) / the `tierbound:fix` label in `ingest`.
+
+**Done when:** labelling a fixture issue produces one `github_pr_fix` proposal that passes all effector checks when replayed through 8.1–8.3 against the fake.
+
+**Commit:** `feat(w8.4): pr-fix proposes validated patches on request`
+
+#### Step 8.5 — Golden fixes + demo
+
+**Files:** `evals/pr-fix/` (fixture repo snapshot, ~10 issues with failing tests) and an `eval-gate` job that applies recordings and runs `go test` in Actions.
+
+**Done when:** gate thresholds hold (apply 1.0, policy violations 0, tests ≥ 0.6, median size ≤ 2× the reference). On hosted: label → approve → draft PR → `review-pr` reviews it.
+
+**Commit:** `feat(w8.5): pr-fix eval gate`
 
 ---
 
