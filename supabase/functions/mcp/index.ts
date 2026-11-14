@@ -15,6 +15,7 @@ import { z } from "npm:zod@^4.3.6";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 
 import { actionHash } from "../_shared/canonical.ts";
+import { preview, summary } from "./render.ts";
 
 type ToolResult = {
   content: { type: "text"; text: string }[];
@@ -53,14 +54,15 @@ async function decide(
   return ok(data);
 }
 
-async function listPendingActions(supabase: SupabaseClient): Promise<ToolResult> {
-  const { data, error } = await supabase
+async function listPendingActions(supabase: SupabaseClient, kind?: string): Promise<ToolResult> {
+  let query = supabase
     .from("proposed_actions")
     .select("id, kind, target, payload_hash, status, created_at, run_id")
-    .eq("status", "proposed")
-    .order("created_at", { ascending: true });
+    .eq("status", "proposed");
+  if (kind) query = query.eq("kind", kind);
+  const { data, error } = await query.order("created_at", { ascending: true });
   if (error) return refuse(error.message);
-  return ok(data);
+  return ok(data.map((row) => ({ ...row, summary: summary(row) })));
 }
 
 async function getAction(supabase: SupabaseClient, action_id: string): Promise<ToolResult> {
@@ -70,7 +72,7 @@ async function getAction(supabase: SupabaseClient, action_id: string): Promise<T
     .eq("id", action_id)
     .single();
   if (error) return refuse(error.message);
-  return ok({ ...data, recomputed_hash: await actionHash(data) });
+  return ok({ ...data, preview: preview(data), recomputed_hash: await actionHash(data) });
 }
 
 async function getRun(supabase: SupabaseClient, run_id: string): Promise<ToolResult> {
@@ -89,16 +91,17 @@ function buildServer(supabase: SupabaseClient): McpServer {
   server.registerTool(
     "list_pending_actions",
     {
-      description: "List proposed actions waiting for your decision",
-      inputSchema: z.object({}),
+      description: "List proposed actions waiting for your decision, optionally of one kind (github_comment, github_issue)",
+      inputSchema: z.object({ kind: z.string().min(1).max(64).optional() }),
       annotations: { readOnlyHint: true },
     },
-    () => listPendingActions(supabase),
+    ({ kind }) => listPendingActions(supabase, kind),
   );
   server.registerTool(
     "get_action",
     {
-      description: "Show one action's payload, its payload_hash, and the agent config_hash",
+      description:
+        "Show one action: a readable preview by kind (comment or new issue), the raw payload, its payload_hash, and the agent config_hash",
       inputSchema: z.object({ action_id: uuid }),
       annotations: { readOnlyHint: true },
     },
