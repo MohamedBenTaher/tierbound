@@ -115,7 +115,7 @@ func (h harness) seedAction(t *testing.T, owner string) action {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id := h.insertAction(t, owner, mustJSON(t, target), mustJSON(t, payload), hash)
+	id := h.insertAction(t, owner, "github_comment", mustJSON(t, target), mustJSON(t, payload), hash)
 	return action{ID: id, Hash: hash, Body: body, Issue: fmt.Sprintf("%s#%d", fixtureRepo, issue), Owner: owner}
 }
 
@@ -128,9 +128,9 @@ func mustJSON(t *testing.T, v any) string {
 	return string(b)
 }
 
-// insertAction inserts one github_comment action (with its own agent and
-// run) from raw JSON target/payload and returns its id.
-func (h harness) insertAction(t *testing.T, owner, targetJSON, payloadJSON, hash string) string {
+// insertAction inserts one action of kind (with its own draft agent and run)
+// from raw JSON target/payload and returns its id.
+func (h harness) insertAction(t *testing.T, owner, kind, targetJSON, payloadJSON, hash string) string {
 	t.Helper()
 	var id string
 	err := h.db.QueryRow(context.Background(), `
@@ -142,9 +142,9 @@ func (h harness) insertAction(t *testing.T, owner, targetJSON, payloadJSON, hash
 			insert into public.runs (agent_id, attempt, status)
 			select id, 1, 'succeeded' from agent returning id)
 		insert into public.proposed_actions (run_id, kind, target, payload, payload_hash, idempotency_key)
-		select run.id, 'github_comment', $2::jsonb, $3::jsonb, $4, 'e2e:' || gen_random_uuid()
+		select run.id, $5, $2::jsonb, $3::jsonb, $4, 'e2e:' || gen_random_uuid()
 		from run returning id::text`,
-		owner, targetJSON, payloadJSON, hash).Scan(&id)
+		owner, targetJSON, payloadJSON, hash, kind).Scan(&id)
 	if err != nil {
 		t.Fatal(err)
 	}

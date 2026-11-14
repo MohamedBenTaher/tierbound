@@ -120,10 +120,7 @@ func TestTypeScriptActionHashMatchesGoldenVectors(t *testing.T) {
 	}
 	for _, v := range doc.Vectors {
 		t.Run(v.Name, func(t *testing.T) {
-			if v.Kind != "github_comment" {
-				t.Skipf("kind %q cannot be stored in v1 (check constraint)", v.Kind)
-			}
-			id := h.insertAction(t, owner, string(v.Target), string(v.Payload), v.SHA256)
+			id := h.insertAction(t, owner, v.Kind, string(v.Target), string(v.Payload), v.SHA256)
 			r := h.callTool(t, token, "get_action", map[string]any{"action_id": id})
 			if r.IsError {
 				t.Fatalf("get_action: %s", r.Text)

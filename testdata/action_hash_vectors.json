@@ -1,5 +1,5 @@
 {
-  "description": "Golden vectors for payload_hash = sha256(canonical JSON of {kind, target, payload}). Read by worker/internal/hashing (Go) and worker/internal/e2e via the mcp function's get_action.recomputed_hash (TypeScript). Change only together with both implementations.",
+  "description": "Golden vectors for payload_hash = sha256(canonical JSON of {kind, target, payload}). Read by worker/internal/hashing (Go) and worker/internal/e2e via the mcp function's get_action.recomputed_hash (TypeScript). Change only together with all three implementations (Go, TypeScript, SQL). Covers every kind in public.kind_policy.",
   "vectors": [
     {
       "name": "plain comment",
@@ -97,6 +97,54 @@
       },
       "canonical": "{\"kind\":\"github_comment\",\"payload\":{\"body\":\"b\",\"draft\":true,\"labels\":[\"bug\",\"area:worker\"],\"note\":null},\"target\":{\"issue_number\":2147483647,\"repo\":\"o.r-1/x_y\"}}",
       "sha256": "7adc1de8b0ef720013ede17468fc1df37c5032df5804eaf0bd8afd40bed248c7"
+    },
+    {
+      "name": "issue: title, body, labels",
+      "kind": "github_issue",
+      "target": {
+        "repo": "MohamedBenTaher/tierbound"
+      },
+      "payload": {
+        "body": "## Problem\nThe effector retries forever.\n\n## Done when\n- [ ] one retry",
+        "labels": [
+          "bug",
+          "effector"
+        ],
+        "title": "Effector retries forever"
+      },
+      "canonical": "{\"kind\":\"github_issue\",\"payload\":{\"body\":\"## Problem\\nThe effector retries forever.\\n\\n## Done when\\n- [ ] one retry\",\"labels\":[\"bug\",\"effector\"],\"title\":\"Effector retries forever\"},\"target\":{\"repo\":\"MohamedBenTaher/tierbound\"}}",
+      "sha256": "f6b5605d99bf56ce660c32817f8df7a835428b148f6a2aac1f5ff2e311eb12b1"
+    },
+    {
+      "name": "issue: label order is part of the hash",
+      "kind": "github_issue",
+      "target": {
+        "repo": "MohamedBenTaher/tierbound"
+      },
+      "payload": {
+        "body": "## Problem\nThe effector retries forever.\n\n## Done when\n- [ ] one retry",
+        "labels": [
+          "effector",
+          "bug"
+        ],
+        "title": "Effector retries forever"
+      },
+      "canonical": "{\"kind\":\"github_issue\",\"payload\":{\"body\":\"## Problem\\nThe effector retries forever.\\n\\n## Done when\\n- [ ] one retry\",\"labels\":[\"effector\",\"bug\"],\"title\":\"Effector retries forever\"},\"target\":{\"repo\":\"MohamedBenTaher/tierbound\"}}",
+      "sha256": "45b84660a20b7fae7f48a3db341fa0af14dbe8bb245e9c9ebf89670e46475383"
+    },
+    {
+      "name": "issue: no labels, other repo, unicode title",
+      "kind": "github_issue",
+      "target": {
+        "repo": "MohamedBenTaher/fable"
+      },
+      "payload": {
+        "body": "x",
+        "labels": [],
+        "title": "Café   \"quoted\" <b>"
+      },
+      "canonical": "{\"kind\":\"github_issue\",\"payload\":{\"body\":\"x\",\"labels\":[],\"title\":\"Café   \\\"quoted\\\" <b>\"},\"target\":{\"repo\":\"MohamedBenTaher/fable\"}}",
+      "sha256": "aa8d1c5bc455d13e179fcb820f4269b01e9eb8147b7824fc949075752e2341a0"
     }
   ]
 }
