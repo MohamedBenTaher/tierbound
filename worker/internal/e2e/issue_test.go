@@ -121,3 +121,36 @@ func TestUnknownLabelRefused(t *testing.T) {
 		t.Fatalf("effects.external_id = %s for a refused action, want null", *e.ExternalID)
 	}
 }
+
+// A crash between creating the issue and recording it leaves the effect
+// 'claimed' with no external_id. A live lease is never taken over; after it
+// expires the takeover finds the issue by marker and records it, and every
+// later replay answers already_posted. One issue throughout.
+func TestIssueCrashBetweenPostAndRecordThenReplay(t *testing.T) {
+	h := setup(t)
+	gh := startFakeGitHub(t, h)
+	a := h.seedIssueAction(t, h.seedUser(t), []string{"bug"})
+
+	h.forceApprove(t, a, a.Hash)
+	h.waitPosted(t, a)
+	issue := assertOneIssue(t, gh, a, 1)
+
+	h.exec(t, `update public.effects set status = 'claimed', external_id = null, executed_at = null,
+		claimed_at = now() where action_id = $1::uuid`, a.ID)
+	h.exec(t, `update public.proposed_actions set status = 'approved' where id = $1::uuid`, a.ID)
+	if r := h.invoke(t, a); r.Status != 409 || r.Outcome != "busy" {
+		t.Fatalf("live lease: %d %s %s, want 409 busy", r.Status, r.Outcome, r.Error)
+	}
+
+	h.exec(t, `update public.effects set claimed_at = now() - interval '1 hour' where action_id = $1::uuid`, a.ID)
+	if r := h.invoke(t, a); r.Status != 200 || r.Outcome != "recorded_existing" {
+		t.Fatalf("expired lease: %d %s %s, want 200 recorded_existing", r.Status, r.Outcome, r.Error)
+	}
+	if e := h.effect(t, a); e.ExternalID == nil || *e.ExternalID != issue.URL {
+		t.Fatalf("external_id = %v, want the original issue %s", e.ExternalID, issue.URL)
+	}
+	if r := h.invoke(t, a); r.Status != 200 || r.Outcome != "already_posted" {
+		t.Fatalf("replay: %d %s %s, want 200 already_posted", r.Status, r.Outcome, r.Error)
+	}
+	assertOneIssue(t, gh, a, 1)
+}
