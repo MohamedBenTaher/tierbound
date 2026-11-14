@@ -1,4 +1,4 @@
-// effect-github-comment (plan step 2.3): the only component that holds a
+// effect-github-comment (plan steps 2.3, 4.3): the only component that holds a
 // GitHub write credential. Fired by the approvals insert trigger (pg_net,
 // migration effector_webhook) and safe to invoke any number of times, at
 // once or after a crash: it trusts nothing in the request except the action
@@ -15,15 +15,20 @@
 //                over, only when external_id is null and the row is 'failed'
 //                or its 'claimed' lease expired. A live claim is never taken
 //                over (fixes verify-effector-claim finding F1).
-//   4. retry   - a takeover first searches the issue for the marker; a hit
+//   4. retry   - a takeover first searches GitHub for the marker; a hit
 //                is recorded instead of posting again (timeout-after-success).
+//
+// Despite its v1 name it executes every kind whose kind_policy.effector is
+// this function (github_comment, github_issue); kinds.ts holds the per-kind
+// validation, marker search and post.
 //   5. post + record (external_id, 'posted', executed_at, action 'executed')
 //                in one transaction, fenced on the attempts counter.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import postgres from "npm:postgres@3.4.7";
 
 import { actionHash } from "../_shared/canonical.ts";
-import { appFromEnv, type GitHubApp, markerFor, type Target, timeoutMsFromEnv } from "./github.ts";
+import { appFromEnv, type GitHubApp, markerFor, timeoutMsFromEnv } from "./github.ts";
+import { type Handler, handlerFor } from "./kinds.ts";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -49,7 +54,8 @@ function db(): Sql {
   return sqlClient;
 }
 
-type Claim = { owned: true; fence: number; retry: boolean; at: number } | { owned: false; outcome: Outcome };
+type Owned = { owned: true; fence: number; retry: boolean; at: number };
+type Claim = Owned | { owned: false; outcome: Outcome };
 
 async function claim(sql: Sql, actionId: string): Promise<Claim> {
   const at = Date.now();
@@ -96,15 +102,14 @@ async function fail(sql: Sql, actionId: string, fence: number, error: string): P
     where action_id = ${actionId} and attempts = ${fence} and external_id is null`;
 }
 
-type Verified = { ok: true; target: Target; body: string } | { ok: false; error: string };
+type Verified = { ok: true; handler: Handler; approvedAt: string } | { ok: false; error: string };
 
 async function verify(sql: Sql, actionId: string): Promise<Verified> {
   const [action] = await sql`
     select kind, target, payload from public.proposed_actions where id = ${actionId}`;
   if (!action) return { ok: false, error: "no such action" };
-  if (action.kind !== "github_comment") return { ok: false, error: `unsupported kind ${action.kind}` };
   const [approval] = await sql`
-    select decision, payload_hash from public.approvals where action_id = ${actionId}`;
+    select decision, payload_hash, decided_at from public.approvals where action_id = ${actionId}`;
   if (approval?.decision !== "approved") return { ok: false, error: "no approved approvals row" };
   // Recompute; never trust the proposed_actions.payload_hash column (it goes
   // stale when kind, target, or payload is edited in SQL).
@@ -112,9 +117,39 @@ async function verify(sql: Sql, actionId: string): Promise<Verified> {
   if (approval.payload_hash !== recomputed) {
     return { ok: false, error: "approved payload_hash does not match the action's kind/target/payload" };
   }
-  const body = action.payload?.body;
-  if (typeof body !== "string" || body.length === 0) return { ok: false, error: "payload.body missing" };
-  return { ok: true, target: action.target as Target, body };
+  // The handler closes over exactly the verified target and payload.
+  const handler = handlerFor(action);
+  if (typeof handler === "string") return { ok: false, error: handler };
+  return { ok: true, handler, approvedAt: new Date(approval.decided_at).toISOString() };
+}
+
+// Timeout-after-success: only a takeover can find an earlier post.
+async function findEarlier(gh: GitHubApp, checked: Verified & { ok: true }, c: Owned, marker: string) {
+  if (!c.retry) return null;
+  return await checked.handler.findExisting(gh, marker, checked.approvedAt);
+}
+
+function assertLeaseLeft(c: Owned): void {
+  if (Date.now() - c.at > LEASE_SECONDS * 1000 - timeoutMsFromEnv()) {
+    throw new Error("lease nearly expired before post; leaving it to a retry");
+  }
+}
+
+// Owned section: the caller holds the claim (fence). Returns the outcome.
+async function post(sql: Sql, gh: GitHubApp, actionId: string, checked: Verified & { ok: true }, c: Owned) {
+  const marker = markerFor(actionId);
+  const recorded = async (url: string, outcome: "posted" | "recorded_existing"): Promise<Outcome> =>
+    await record(sql, actionId, c.fence, url) ? { outcome, external_id: url } : { outcome: "fence_lost" };
+
+  const existing = await findEarlier(gh, checked, c, marker);
+  if (existing) return await recorded(existing, "recorded_existing");
+  const refusal = await checked.handler.precheck(gh);
+  if (refusal) {
+    await fail(sql, actionId, c.fence, refusal);
+    return { outcome: "refused", error: refusal };
+  }
+  assertLeaseLeft(c);
+  return await recorded(await checked.handler.post(gh, marker), "posted");
 }
 
 async function execute(sql: Sql, gh: GitHubApp, actionId: string): Promise<Outcome> {
@@ -124,23 +159,8 @@ async function execute(sql: Sql, gh: GitHubApp, actionId: string): Promise<Outco
   const c = await claim(sql, actionId);
   if (!c.owned) return c.outcome;
 
-  const marker = markerFor(actionId);
   try {
-    if (c.retry) {
-      const existing = await gh.findMarkedComment(checked.target, marker);
-      if (existing) {
-        return await record(sql, actionId, c.fence, existing)
-          ? { outcome: "recorded_existing", external_id: existing }
-          : { outcome: "fence_lost" };
-      }
-    }
-    if (Date.now() - c.at > LEASE_SECONDS * 1000 - timeoutMsFromEnv()) {
-      throw new Error("lease nearly expired before post; leaving it to a retry");
-    }
-    const url = await gh.postComment(checked.target, `${checked.body}\n\n${marker}`);
-    return await record(sql, actionId, c.fence, url)
-      ? { outcome: "posted", external_id: url }
-      : { outcome: "fence_lost" };
+    return await post(sql, gh, actionId, checked, c);
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     await fail(sql, actionId, c.fence, error);

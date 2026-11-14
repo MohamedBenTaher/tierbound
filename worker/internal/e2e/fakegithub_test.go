@@ -28,8 +28,8 @@ type fakeComment struct {
 	URL   string
 }
 
-// fakeGitHub implements the three GitHub endpoints the effector uses and
-// records every comment. It verifies the App JWT with the public half of the
+// fakeGitHub implements the GitHub endpoints the effector uses and records
+// every comment and issue. It verifies the App JWT with the public half of the
 // key the harness generated, so the JWT -> installation token flow is real.
 type fakeGitHub struct {
 	pub            *rsa.PublicKey
@@ -43,6 +43,9 @@ type fakeGitHub struct {
 	postDelay      time.Duration // before storing: widens the race window
 	hangAfterStore time.Duration // after storing: the client times out (timeout-after-success)
 	failPosts      bool          // answer 500 without storing (GitHub down)
+
+	issues     []fakeIssue // fakeissues_test.go
+	issuePosts int
 }
 
 func startFakeGitHub(t *testing.T, h harness) *fakeGitHub {
@@ -65,6 +68,9 @@ func startFakeGitHub(t *testing.T, h harness) *fakeGitHub {
 	mux.HandleFunc("POST /app/installations/{id}/access_tokens", f.accessToken)
 	mux.HandleFunc("GET /repos/{owner}/{repo}/issues/{number}/comments", f.listComments)
 	mux.HandleFunc("POST /repos/{owner}/{repo}/issues/{number}/comments", f.createComment)
+	mux.HandleFunc("GET /repos/{owner}/{repo}/labels", f.listLabels)
+	mux.HandleFunc("GET /repos/{owner}/{repo}/issues", f.listIssues)
+	mux.HandleFunc("POST /repos/{owner}/{repo}/issues", f.createIssue)
 
 	ln, err := net.Listen("tcp", h.fakeAddr)
 	if err != nil {

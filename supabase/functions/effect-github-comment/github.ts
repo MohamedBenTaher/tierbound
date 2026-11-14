@@ -1,6 +1,6 @@
 // GitHub App client for the effector (plan step 2.3). Auth is the App flow:
 // a short-lived RS256 JWT signed with the App private key buys an
-// installation token, which posts the comment. GITHUB_API_URL makes the
+// installation token, which posts the comment or issue. GITHUB_API_URL makes the
 // client injectable (the e2e tests point it at a local fake GitHub).
 
 export type Target = { repo: string; issue_number: number };
@@ -49,16 +49,47 @@ export class GitHubApp {
 
   // Returns the html_url of the first comment on the issue carrying marker.
   async findMarkedComment(target: Target, marker: string): Promise<string | null> {
+    return await this.findMarked(`${issuePath(target)}/comments?`, marker);
+  }
+
+  // Returns the html_url of the issue carrying marker, among issues updated
+  // since `since` (any state: someone may have closed it already).
+  async findMarkedIssue(repo: string, marker: string, since: string): Promise<string | null> {
+    return await this.findMarked(`${repoPath(repo)}/issues?state=all&since=${encodeURIComponent(since)}&`, marker);
+  }
+
+  async listLabels(repo: string): Promise<string[]> {
     const token = await this.installationToken();
+    const names: string[] = [];
     for (let page = 1; page <= MAX_PAGES; page++) {
-      const comments = await this.request<{ body?: string; html_url: string }[]>(
+      const labels = await this.request<{ name: string }[]>(
         "GET",
-        `${issuePath(target)}/comments?per_page=${PAGE_SIZE}&page=${page}`,
+        `${repoPath(repo)}/labels?per_page=${PAGE_SIZE}&page=${page}`,
         token,
       );
-      const hit = comments.find((c) => c.body?.includes(marker));
+      names.push(...labels.map((l) => l.name));
+      if (labels.length < PAGE_SIZE) return names;
+    }
+    throw new Error(`label listing exceeded ${MAX_PAGES} pages`);
+  }
+
+  async createIssue(repo: string, issue: { title: string; body: string; labels: string[] }): Promise<string> {
+    const token = await this.installationToken();
+    const created = await this.request<{ html_url: string }>("POST", `${repoPath(repo)}/issues`, token, issue);
+    return created.html_url;
+  }
+
+  private async findMarked(listPath: string, marker: string): Promise<string | null> {
+    const token = await this.installationToken();
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const items = await this.request<{ body?: string | null; html_url: string }[]>(
+        "GET",
+        `${listPath}per_page=${PAGE_SIZE}&page=${page}`,
+        token,
+      );
+      const hit = items.find((c) => c.body?.includes(marker));
       if (hit) return hit.html_url;
-      if (comments.length < PAGE_SIZE) return null;
+      if (items.length < PAGE_SIZE) return null;
     }
     throw new Error(`marker search exceeded ${MAX_PAGES} pages`);
   }
@@ -104,12 +135,16 @@ export class GitHubApp {
   }
 }
 
+function repoPath(repo: string): string {
+  if (!REPO_RE.test(repo)) throw new Error(`invalid repo ${repo}`);
+  return `/repos/${repo}`;
+}
+
 function issuePath(target: Target): string {
-  if (!REPO_RE.test(target.repo)) throw new Error(`invalid repo ${target.repo}`);
   if (!Number.isInteger(target.issue_number) || target.issue_number < 1) {
     throw new Error(`invalid issue_number ${target.issue_number}`);
   }
-  return `/repos/${target.repo}/issues/${target.issue_number}`;
+  return `${repoPath(target.repo)}/issues/${target.issue_number}`;
 }
 
 // --- App JWT (RS256) ------------------------------------------------------
