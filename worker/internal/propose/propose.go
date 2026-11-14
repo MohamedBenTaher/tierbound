@@ -24,8 +24,10 @@ import (
 )
 
 const (
-	// KindGitHubComment is the only action kind in v1 (SPEC section 2).
+	// KindGitHubComment is the v1 action kind (SPEC section 2).
 	KindGitHubComment = "github_comment"
+	// KindGitHubIssue opens one new issue (plan step 4.1, V2_ACTIONS 4.1).
+	KindGitHubIssue = "github_issue"
 
 	// MaxAttempts is the read count after which a failing job is dead-lettered
 	// instead of retried.
