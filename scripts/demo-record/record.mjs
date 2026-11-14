@@ -101,6 +101,8 @@ const issueUrl = (n) => `https://github.com/${REPO}/issues/${n}`;
 async function botComments(issue, state) {
   const headers = { Accept: "application/vnd.github+json", "User-Agent": "tierbound-demo-record" };
   if (state.etag) headers["If-None-Match"] = state.etag;
+  // Optional: unauthenticated API calls share a 60/hour limit per IP.
+  if (process.env.GH_TOKEN) headers.Authorization = `Bearer ${process.env.GH_TOKEN}`;
   const res = await fetch(`https://api.github.com/repos/${REPO}/issues/${issue}/comments?per_page=100`, { headers });
   if (res.status === 304) return state.last;
   if (!res.ok) throw new Error(`GitHub API ${res.status} for issue #${issue}`);
