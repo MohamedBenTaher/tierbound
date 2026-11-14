@@ -211,13 +211,20 @@ Write it up as `docs/postmortem-001.md` (timeline, impact, root cause, fix, test
 
 ## 12. v2: more action kinds (design summary)
 
-Full design: [V2_ACTIONS.md](V2_ACTIONS.md). The invariant doesn't change: propose → approve the exact hash over MCP → execute exactly once, with no write credential in the worker.
+Full design: [V2_ACTIONS.md](V2_ACTIONS.md). The invariant doesn't change: propose → approve the exact hash over MCP → execute exactly once, with no write credential in the worker. Every action of every kind needs a human approval; there is no auto-approve.
 
 | Kind | Agent | Tier | Effect | Key safety rule |
 | --- | --- | --- | --- | --- |
 | `github_issue` | any | `draft` | one issue | marker dedupe; unknown labels refused |
-| `github_pr_review` | `review-pr` | `draft` (`gate` to block) | one review + optional `tierbound/review` status | findings grounded by code; blocking needs the eval-earned `block` capability **and** approval; moved head → `stale` |
-| `github_report` | `review-repo` | `draft` | create/update one tracking issue | deterministic tools are the evidence; every item cites a fingerprint; no change → no action |
-| `github_pr_fix` | `pr-fix` | `code` | branch `tierbound/fix-<action_id>` + **draft** PR | tree derived from the hashed diff at a pinned `base_sha`; denylist and size limits; separate fixer App; never merges or touches `main` |
+| `github_pr_review` | `review-pr` | `draft` (`gate` to block) | one review + **advisory** `tierbound/review` status (not a required check) | findings grounded by code; blocking needs the eval-earned `block` capability **and** approval; moved head → `stale` |
+| `github_report` | `review-repo` | `draft` | create/update one tracking issue | deterministic tools are the evidence; every item cites a fingerprint; no change → no action; security items as a count at most |
+| `github_security_advisory` | `review-repo` | `draft` | one **private** draft repository advisory | secret values never stored; one advisory per fingerprint group |
+| `github_pr_fix` | `pr-fix` | `code` | branch `tierbound/fix-<action_id>` + **draft** PR | tree derived from the hashed diff at a pinned `base_sha`; hard deny-list (workflows, `.env*`, keys, migrations, CODEOWNERS, protection files) and size limits; own Edge Function; never merges or touches `main` |
 
-Tiers and capabilities are enforced by a `before insert` trigger on `proposed_actions`. Three GitHub Apps (reader, speaker, fixer) cap each key's power. Deterministic scanners run in GitHub Actions; the LLM and proposals stay in the worker; writes stay in the effectors.
+- **One GitHub App** (`tierbound-mbt`, extended per phase). Least privilege rests on:
+  - the worker never holding the key (down-scoped read tokens from `github-read-token`);
+  - effector-only writes;
+  - the tier trigger on `proposed_actions`;
+  - the separate fixer function;
+  - branch protection on `main`.
+- **Where things run:** deterministic scanners run in GitHub Actions; the LLM (Claude or GPT for review and fix, provider-pluggable) and proposals stay in the worker; writes stay in the effectors.

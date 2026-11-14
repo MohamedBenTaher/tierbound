@@ -1,6 +1,6 @@
 # tierbound v2 — more action kinds (design)
 
-> Status: **design only** (2026-11-14). Nothing here is implemented. It extends [SPEC.md](SPEC.md); the build steps are in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) Phases 4–8.
+> Status: **design** (2026-11-14), revised the same day with the owner's decisions (§10). Phase 4 (`github_issue`) is being implemented; everything else is design only. It extends [SPEC.md](SPEC.md); the build steps are in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) Phases 4–8.
 
 v1 does one thing: an agent drafts a GitHub comment, a human approves its exact hash over MCP, and an effector posts it exactly once. v2 adds four kinds of work. None of them weakens the core invariant:
 
@@ -11,6 +11,7 @@ v1 does one thing: an agent drafts a GitHub comment, a human approves its exact 
 | any (first: `review-repo`, follow-ups) | `github_issue` | one new issue | `draft` |
 | `review-pr` | `github_pr_review` | one PR review (+ optional `tierbound/review` status) | `draft`; blocking needs `gate` |
 | `review-repo` | `github_report` | create or update one tracking issue | `draft` |
+| `review-repo` | `github_security_advisory` | one **private** draft repository security advisory | `draft` |
 | `pr-fix` | `github_pr_fix` | one branch `tierbound/fix-<action_id>` + one **draft** PR | `code` |
 
 ---
@@ -38,21 +39,30 @@ Tiers are ordered by blast radius. An agent's tier caps which kinds it may propo
 - **Insert check.** A `before insert` trigger on `proposed_actions` (security definer) joins `runs → agents` and refuses a kind above the agent's tier. A worker bug or a prompt injection can't propose a PR fix from a review agent.
 - **Capabilities are earned per config hash.** Today's single `evals_passed_hash` becomes the `propose` capability. A new table `agent_capabilities(agent_id, config_hash, capability, metrics jsonb, granted_at)` holds the rest, and only `evals/promote.sh` (service role) writes it after the eval gate passes the capability's threshold. The first extra capability is `block`, for `review-pr`.
 - **Blocking check.** The same insert trigger refuses a `github_pr_review` with `event = REQUEST_CHANGES` or `status.state = failure` unless `block` is granted for the run's `config_hash`. This needs a new column, `runs.config_hash`.
-- **Approval is always human in v2.** Auto-approval stays out of scope, as in AGENTS.md invariant 5. The design leaves room for one later policy, `auto_comment`: non-blocking review comments from a config with precision ≥ 0.9 on the review golden set. The approval row would name the policy and config hash as the approver, so the ledger still says who or what approved. This is listed as an open question (§10).
+- **Approval is always human, for every kind, permanently** (owner decision, §10). There is no auto-approve tier, no policy approver and no `auto_comment`. A capability only decides what an agent may *propose*; it never replaces the human decision.
 
-## 3. GitHub Apps: three identities, least privilege
+## 3. One GitHub App, and what carries least privilege instead
 
-v1 has one App, `tierbound-mbt`, with Issues write. v2 needs code writes, and the worker needs to read code. Each identity gets an App whose **permissions** cap the damage of its key:
+**Decision (owner, 2026-11-14): one App.** The existing `tierbound-mbt` App is extended instead of registering a reader App and a fixer App. It is installed on `tierbound` only (today the installation covers all repos; narrowing it is an owner click). Its permissions grow as phases ship:
 
-| App | Holder | Permissions (repo: `tierbound` only) | Can it hurt the default branch? |
-| --- | --- | --- | --- |
-| `tierbound-reader` (new) | Go worker | Contents **read**, Issues read, Pull requests read, Actions read (artifacts), Metadata read | No: the key itself cannot mint a write token |
-| `tierbound-mbt` (existing, "speaker") | `effect-github` function | Issues write, Pull requests write (reviews), Commit statuses write, Metadata read | No contents permission, so no branch writes or merges |
-| `tierbound-fixer` (new) | `effect-github-pr` function only | Contents **write**, Pull requests write, Metadata read | Only blocked by branch protection (below) |
+| Permission | Needed by | Phase |
+| --- | --- | --- |
+| Issues: write | comments, `github_issue`, `github_report` | v1, 4 |
+| Metadata: read | everything | v1 |
+| Pull requests: write | reviews (`github_pr_review`), draft PRs (`github_pr_fix`) | 5, 8 |
+| Commit statuses: write | advisory `tierbound/review` status | 5 |
+| Actions: read | evidence artifacts | 5 |
+| Repository security advisories: write | `github_security_advisory` | 7 |
+| Contents: write | branches and commits for `github_pr_fix` | 8 |
 
-- **Why a reader App, not a token broker.** v1 hands the worker a short-lived installation token minted from the speaker key on the operator's machine. A worker that held the speaker key could mint write tokens. A separate read-only App removes that path entirely: the worker holds a key whose maximum power is read. This replaces `GITHUB_READ_TOKEN` and makes AGENTS.md invariant 1 hold by construction, not by convention.
-- **Why the fixer is its own App and function.** Contents write is the only permission that can change code. Isolating it means one Edge Function, `effect-github-pr`, holds one key that the comment and review paths never load. It can be revoked or uninstalled without touching triage.
-- **Default branch protection** (owner click, required before `pr-fix` goes live): the default branch requires a pull request, `tierbound-fixer` is **not** on any bypass list, and force-pushes and deletions are blocked. Even a leaked fixer key can then only create branches and PRs. A repository ruleset can additionally restrict ref creation for the App to `tierbound/fix-*` (**verify** whether rulesets can target an App's branch creation by pattern).
+**The honest trade-off.** Three Apps would have meant the worker's key could only read, and only the fixer function's key could write code. With one App, **one key can do everything above**: comment, review, open PRs, write branches and draft advisories on `tierbound`. If that key leaks, the damage is bounded by the installation (one repo) and by branch protection on `main`, nothing finer. Note that Supabase Edge Function secrets are **project-wide** environment variables, so even with three Apps every function in the project could have read every key; per-function isolation was never available from secret scoping alone. What one App gives up is mostly the *worker* side, and that is restored by a token broker (below).
+
+**What least privilege rests on now:**
+1. **The worker never holds the App key.** It gets short-lived, **down-scoped** installation tokens from a small Edge Function, `github-read-token`. The function mints `POST /app/installations/{id}/access_tokens` with `repositories: [<repo>]` and `permissions: {contents: read, issues: read, pull_requests: read, actions: read, metadata: read}`, and GitHub refuses to issue more than was requested. The worker authenticates with its own shared secret (not the effector's). So the worker's maximum power is still "read one repo for an hour". This replaces `GITHUB_READ_TOKEN`.
+2. **Only effectors write**, and only through the claim protocol after a verified approval. No other function imports the GitHub write client.
+3. **The database tier trigger** (§2) stops an agent proposing a kind above its tier, so a write the effectors would accept can only come from an agent allowed to propose it, and then only after a human approves the exact hash.
+4. **The code path is separate.** `github_pr_fix` executes in its own Edge Function, `effect-github-pr`. It contains the only calls to the git data API, the hard deny-list (§4.3) and the `tierbound/fix-*` branch rule. The speaker effector `effect-github` has no code-writing calls at all.
+5. **Branch protection on `main`** (owner click before Phase 8): require a pull request, no bypass for the App, no force-push or deletion. Even the full App key cannot change `main` without a reviewed merge, and the effector never calls merge.
 
 ## 4. The four kinds
 
@@ -80,7 +90,7 @@ v1 has one App, `tierbound-mbt`, with Issues write. v2 needs code writes, and th
 
 **Trigger:** `pull_request` `opened` / `synchronize` / `ready_for_review`, same-repo PRs only in v2 (fork PRs: §9). `ingest` enqueues `{repo, pr, head_sha, base_sha}` once the evidence workflow for `head_sha` has finished. That means a `workflow_run` `completed` webhook for `tierbound-evidence`, plus the PR event, joined in `ingest` by `head_sha`.
 
-**Inputs the worker reads** (reader App):
+**Inputs the worker reads** (down-scoped read token from `github-read-token`, §3):
 - the PR diff (`GET /pulls/{n}/files`, patch per file);
 - the repo's rules **at `base_sha`**: `AGENTS.md`, plus the rule files listed in the agent config, such as `.cursor/skills/**/SKILL.md` readability and quality guides and `docs/review-rules.md`;
 - the deterministic evidence artifact from §7: fallow, golangci-lint and gosec findings, restricted to changed lines.
@@ -123,7 +133,7 @@ Rules are read at the base commit so that a PR can't weaken the rules it's judge
 - a comment line no longer in the diff (422) → `failed`, `invalid_comment_position`, no partial review, because the review is one API call;
 - review posted but status failed → `progress` lets the retry post only the status.
 
-**Blocking merges.** With branch protection requiring the `tierbound/review` status, a PR shows "Expected — waiting for status" until the owner approves a review. A clean review sets `success`; an approved blocking review sets `failure`. This is opt-in per repo (owner click) because it makes every PR wait for a human-approved review (§10).
+**Advisory, not required (owner decision, §10).** `tierbound/review` is **not** a required check on `main`. A blocking verdict (earned through the `block` capability and approved by a human) posts `REQUEST_CHANGES` and a `failure` status, which shows red on the PR but does not stop a merge. Making it required later is one branch-protection click and needs no code change.
 
 **Eval (golden PRs):**
 - **Fixtures:** ~20 recorded PRs as `{diff, rules@base, evidence, expected_findings[{path, line±3, rule anchor, severity}], expected_verdict}`: ~12 with seeded violations and ~8 clean PRs as the false-positive control. Examples of seeded violations:
@@ -143,7 +153,9 @@ Rules are read at the base commit so that a PR can't weaken the rules it's judge
 
 **MCP:** `get_action` renders the verdict line (`REQUEST_CHANGES · status failure · blocking rule: AGENTS.md#invariants-1`). Then a findings table: file:line, severity, the **quoted** rule text and the evidence ids. Then each inline comment exactly as it will be posted, and the head SHA with a link to the PR diff.
 
-**Demo:** ~10 s. A PR that adds `grant insert on approvals to tierbound_worker`. The review cites AGENTS.md invariant 1 at the exact line, Mohamed approves, and the PR shows a red `tierbound/review`.
+**Model:** provider-pluggable (§11); Claude or GPT through an API key.
+
+**Demo:** ~10 s. A PR that adds `grant insert on approvals to tierbound_worker`. The review cites AGENTS.md invariant 1 at the exact line, Mohamed approves, and the PR shows `REQUEST_CHANGES` and a red (advisory) `tierbound/review`.
 
 ### 4.3 `github_pr_fix` — propose a code fix as a draft PR (agent `pr-fix`)
 
@@ -172,16 +184,17 @@ So what the human reads (the diff) and what lands on GitHub are the same bytes b
 - **Size:** ≤ 10 files, ≤ 400 changed lines, diff ≤ 100 KB. Bigger means "split the issue". Small enough for a human to actually read before approving the hash.
 - **Text only:** UTF-8, no NUL bytes, no binary patches, no mode changes (no `100755`, no symlinks `120000`), no submodules, no renames outside the allowed paths.
 - **Denylist** (lives in the effector code, not in the repo, so a merged PR can't loosen it):
-  - `.github/**`: workflows can read Actions secrets;
+  - `.github/**`: workflows can read Actions secrets; this also covers `.github/CODEOWNERS` and `.github/settings.yml`;
+  - `CODEOWNERS` and `docs/CODEOWNERS` (review ownership), and any branch-protection or ruleset-as-code file (`.github/rulesets/**`, `settings.yml`);
   - `.cursor/**`, `.pre-commit-config.yaml`;
-  - `**/.env*`, `**/*.pem`, `**/*.key`, `**/id_*`;
+  - `**/.env*`, `**/*.pem`, `**/*.key`, `**/*.p12`, `**/id_*`;
   - `supabase/config.toml`, `supabase/migrations/**`: roles, RLS and grants are invariant-sensitive and stay human-written;
   - dependency manifests and lockfiles: `go.mod`, `go.sum`, `package.json`, `pnpm-lock.yaml`, `package-lock.json`, because supply chain changes need a human.
 - **Secret scan:** the added lines are matched against gitleaks-style rules at proposal **and** at effect. A hit refuses the action.
 
 **Freshness ("stale").** The branch is cut from `base_sha` and the diff always applies there, so "the default branch moved" is the only real staleness. Rule: `GET /compare/{base_sha}...{main}`. If any **touched** file changed between `base_sha` and the current `main`, mark the action `stale`, with the reason `base moved: <files>` and no writes. Untouched files moving is fine, because the draft PR will show it as mergeable or conflicting like any human PR. `repropose_action(action_id)` (MCP) enqueues a fresh job at the new head.
 
-**Effector (`effect-github-pr`, fixer App):**
+**Effector (`effect-github-pr`, its own Edge Function; the only code that calls the git data API):**
 1. Verify hash and approval, then claim. Run the policy checks, the freshness check and the zero-fuzz apply, all **before any write**. Any failure → `failed` or `stale` with a reason and **zero** GitHub writes.
 2. Git data API:
    - create blobs for the new contents;
@@ -221,6 +234,8 @@ So what the human reads (the diff) and what lands on GitHub are the same bytes b
 
 The diff is also exposed as an MCP resource (`tierbound://actions/<id>/diff`) so the approver can open the exact bytes in an editor tab rather than through the chat model's summary (§6).
 
+**Model:** provider-pluggable (§11); Claude or GPT through an API key.
+
 **Demo:** ~10 s. Label an issue `tierbound:fix` → `get_action` shows a 6-line diff → approve → a draft PR from `tierbound/fix-…` appears with CI running, and `review-pr` reviews it.
 
 ### 4.4 `github_report` — repo health report (agent `review-repo`)
@@ -255,7 +270,18 @@ The action is either `create` (no tracking issue yet), which reuses the `github_
 - **create** → as `github_issue`.
 - **update** → re-read the issue and refuse as `stale` if `sha256(body) ≠ base_body_sha256`, because someone edited it or another run got there first. Otherwise `PATCH` the body and post the optional summary comment (marker-deduped). The PATCH is idempotent: same body, same result.
 
-**Security findings in a public repo.** The repo is public, so the default is that the **public** issue lists security-class items only as counts per tool ("2 gosec high, 1 secret — details private"). The full security section stays in the action payload in Postgres (owner-RLS) and is readable through MCP only. Whether to file private repository security advisories instead is an open question (§10).
+**Security findings go to private advisories (owner decision, §10).** The repo is public, so security-class findings (gosec high/critical, semgrep security rules, secrets, vulnerable dependencies) never appear in the report issue. The public report says at most "N security findings reported privately". Each security finding group becomes its own action of kind `github_security_advisory` (§4.4.1), approved like everything else.
+
+#### 4.4.1 `github_security_advisory` — private draft advisory
+
+- **Tier:** `draft`. It is private to repo admins and is a *draft*: nothing is published, and publishing stays a manual step on GitHub.
+- **Target:** `{repo}`.
+- **Payload:** `{summary, description, severity, cwe_ids[], vulnerabilities[], fingerprints[]}`. `vulnerabilities` is filled for dependency findings (ecosystem, package, vulnerable range, patched version); for code findings it describes the affected file and line in `description`. Secret findings name the file, line and rule, **never the value**.
+- **Effector (`effect-github`):** `POST /repos/{owner}/{repo}/security-advisories` creates a draft repository advisory; the description ends in the marker. Record `external_id = ghsa_id`.
+- **Idempotency and dedup:** on takeover, `GET /repos/{owner}/{repo}/security-advisories?state=draft` and match the marker. Across runs, the worker skips fingerprints already present in an open draft or published advisory's marker block, so a rerun files nothing new.
+- **Failure modes:** a 422 on the vulnerabilities shape → `failed` with the reason; **verify** whether the API accepts an advisory whose `vulnerabilities` entry has no package for code (non-dependency) findings, and if not, fall back to `POST /repos/{owner}/{repo}/security-advisories/reports` (private vulnerability reporting, if enabled) or keep the details MCP-only.
+- **Permission:** Repository security advisories: write.
+- **Eval:** part of the `review-repo` set: every security evidence item becomes exactly one advisory proposal (coverage = 1.0), no secret material in any field (0 hits), and none of it in the public body (0 hits).
 
 **Eval (seeded repos):**
 - **Fixtures:** ~8 recorded evidence sets plus expected report items, including two that are deliberately "nothing changed since last run".
@@ -263,9 +289,9 @@ The action is either `create` (no tracking issue yet), which reuses the `github_
   - **fabrication**: claims not backed by cited evidence, checked before the validator. **Gate: 0.**
   - **coverage**: high-severity evidence items mentioned. **Gate ≥ 0.9.**
   - **dedup**: reruns with an unchanged fingerprint set propose nothing. **Gate: 100%**, enforced with deterministic unit tests, not LLM scoring.
-  - **public-leak check**: no security detail or secret material in the public body. **Gate: 0 hits.**
+  - **public-leak check**: no security detail or secret material in the public body; security items appear only as `github_security_advisory` proposals. **Gate: 0 hits.**
 
-**MCP:** `get_action` renders the issue body exactly as it will look, plus a delta header (`+3 new · −2 resolved · 14 still open`) and the private security section.
+**MCP:** `get_action` renders the issue body exactly as it will look, plus a delta header (`+3 new · −2 resolved · 14 still open`). Advisory proposals render their summary, severity, CWE, affected file or package and the full description, marked **PRIVATE · draft advisory**.
 
 **Demo:** ~5 s. A weekly report issue updates with "+1 new: unused export `foo` (fallow)", and a rerun with no changes proposes nothing.
 
@@ -273,7 +299,7 @@ The action is either `create` (no tracking issue yet), which reuses the `github_
 
 | Change | Why |
 | --- | --- |
-| `proposed_actions.kind` check → `github_comment, github_issue, github_pr_review, github_report, github_pr_fix` | new kinds |
+| `proposed_actions.kind` check → `github_comment, github_issue, github_pr_review, github_report, github_security_advisory, github_pr_fix` | new kinds |
 | `agent_tier` enum + `gate`, `code` (ordered) | §2 |
 | `kind_policy(kind pk, min_tier, effector, capability)` + `before insert` trigger on `proposed_actions` | tier and capability enforced in the database |
 | `runs.config_hash` | capability checks bind to the config that actually ran |
@@ -302,6 +328,7 @@ Every new kind adds golden vectors to `testdata/action_hash_vectors.json` before
 | Golden-set evals and the eval gate | **GitHub Actions** (existing `eval-gate`) | Deterministic replay of recordings, no secrets (step 3.2) |
 | `pr-fix` test validation of golden fixes | **GitHub Actions** (eval job) | Running tests executes code |
 | LLM calls, grounding validation, proposal insert | **Go worker** | Holds the LLM key and the only `INSERT` grant on `proposed_actions`; Actions holds neither |
+| Read tokens for the worker | **Edge Function `github-read-token`** | Holds the App key; mints down-scoped read-only tokens (§3) |
 | Writes to GitHub | **Edge Function effectors** | Only they hold write-capable keys |
 
 Why not run the LLM review in Actions: that would put the LLM key and a DB-insert credential into Actions secrets, readable by any workflow change. Keeping proposals in the worker keeps one place that can propose and zero places outside the effectors that can write.
@@ -314,30 +341,45 @@ These rows join the README guarantees table **when each phase ships**, each with
 
 | Guarantee | How | Proven by (planned test) |
 | --- | --- | --- |
+| The worker never holds the App key | the worker only receives tokens from `github-read-token`, minted with read permissions for one repo | `TestReadTokenBrokerMintsReadOnly` (asserts the permissions in GitHub's response) |
 | An agent can't propose beyond its tier | `before insert` trigger joins `runs → agents → kind_policy` | `TestReviewAgentCannotProposePRFix`, `TestDraftAgentCannotBlock` |
 | Blocking a merge needs an earned capability **and** a human | trigger requires `block` for `runs.config_hash`; approval is per action | `TestBlockingReviewRefusedWithoutCapability`, `TestBlockingReviewNeedsApproval` |
 | Review findings are grounded | validator: line in the diff, rule quote verbatim at `base_sha`, evidence id exists | `TestUngroundedFindingDropped`, eval grounding metric |
 | The approved diff is the tree that gets written | effector derives blobs by zero-fuzz apply of the hashed diff to `base_sha` | `TestPRFixWritesExactlyTheApprovedDiff`, `TestTamperedDiffRefused` |
-| A fix never touches the default branch, never merges | only `create ref tierbound/fix-<action_id>`, no update/merge calls; branch protection without bypass | fake GitHub fails on any merge/update-ref call: `TestPRFixNeverWritesOutsideItsBranch` |
+| A fix never touches the default branch, never merges | only `effect-github-pr` writes git data, only `create ref tierbound/fix-<action_id>`, no update/merge calls; hard deny-list; branch protection on `main` without bypass for the App | fake GitHub fails on any merge/update-ref call: `TestPRFixNeverWritesOutsideItsBranch`, `TestDenylistedPathRefused` |
 | Stale proposals write nothing | freshness + apply + policy checks before the first visible write | `TestBaseMovedOnTouchedFileIsStaleWithZeroWrites`, `TestReviewOnMovedHeadIsStale` |
 | Exactly once for every kind | unique claim + per-kind lookup (marker / deterministic commit SHA + ref / PR by head) | `TestConcurrentInvocationsOneIssue`, `…OneReview`, `…OnePR`, `TestCrashBetweenRefAndPRCompletesOnce` |
 | Reports don't spam | fingerprint set diff; no change → no action | `TestRepoReviewRerunProposesNothing` |
 | Reports don't fabricate | every item cites evidence ids present in `evidence.json` | eval fabrication = 0, `TestUncitedReportItemDropped` |
 | No secret material reaches GitHub | evidence never stores secret values; diff secret scan at propose and effect | `TestSecretInDiffRefusedAtEffect`, eval public-leak = 0 |
+| Security findings stay private | security items only become draft advisories; the public report carries a count at most | `TestSecurityDetailsNotInPublicBody` |
+| Every action is approved by a human | no auto-approve path exists; `tierbound_decide_action` requires an authenticated owner | `TestNoActionExecutesWithoutApproval` |
 
 ## 9. Out of scope for v2
 
-- Auto-approval of any kind; `auto_comment` is designed but not built.
+- Auto-approval of any kind, ever (owner decision).
+- Making `tierbound/review` a required check (advisory only for now).
 - Fork PRs: untrusted workflow and evidence. This needs a `pull_request_target` design that never executes PR code.
 - Merging, rebasing or updating branches.
-- Multi-repo, and repos other than `tierbound` for the fixer App.
+- Multi-repo: the App stays installed on `tierbound` only.
 - Applying review suggestions automatically.
 - Any web UI beyond the consent page.
 
-## 10. Open questions (owner's call)
+## 10. Decisions (owner, 2026-11-14)
 
-1. **Required status:** make `tierbound/review` a required check on `main`? It blocks every PR, including the owner's own, until a human-approved review lands.
-2. **Security findings in a public repo:** counts-only in the public report with details in MCP (the default above), or private repository security advisories? Advisories need another App permission.
-3. **Three GitHub Apps** (reader, speaker, fixer): this needs two new App registrations and installs, plus branch protection, all owner clicks. The alternative, one App with more permissions, is simpler but loses "the worker's key can't write" and "only one function can touch code".
-4. **Model for `pr-fix` and `review-pr`:** gpt-oss-20b on Groq is fine for triage text but likely weak for patches and grounded reviews. Which provider and budget? The choice changes `config_hash` and the recordings, not the design.
-5. **`auto_comment`:** allow auto-approval of non-blocking review comments later, at precision ≥ 0.9? It's designed in §2 but would relax AGENTS.md invariant 5.
+1. **One GitHub App.** Extend `tierbound-mbt`; least privilege rests on the token broker, effector-only writes, the tier trigger, the separate `effect-github-pr` function with its deny-list and branch rule, and branch protection (§3).
+2. **`tierbound/review` is advisory.** Blocking verdicts still need the eval-earned `block` capability and a human approval, but the status is not a required check on `main`.
+3. **Security findings go to private draft repository security advisories** (`github_security_advisory`); the public report says at most "N security findings reported privately".
+4. **Models for `review-pr` and `pr-fix`: Claude or GPT, provider-pluggable** (§11).
+5. **No auto-approval, ever.** Every action of every kind needs a human approval of its exact hash.
+
+## 11. Model providers
+
+The worker's `internal/llm` gains a provider interface; the agent config's `model` names the provider and model, e.g. `anthropic/<model>` or `openai/<model>`, so a model change is a `config_hash` change and re-runs the eval gate. Keys:
+
+| Key | Where it lives | Needed from |
+| --- | --- | --- |
+| `GROQ_API_KEY` | worker environment (today: `.env`, never committed) | v1 (triage) |
+| `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` | worker environment / `~/.config/tierbound/` while the worker runs on the owner's machine; Supabase Vault if the worker moves to hosted compute | step 5.3 (`review-pr` recordings), step 8.4 (`pr-fix`) |
+
+CI never needs a model key: the eval gates replay committed recordings. Only recording new outputs (`-record`) does, and that runs locally.

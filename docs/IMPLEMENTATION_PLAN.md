@@ -710,7 +710,14 @@ Rejected options:
 
 ## v2 — more action kinds (Phases 4–8, design: [V2_ACTIONS.md](V2_ACTIONS.md))
 
-**Goal:** Four new kinds (`github_issue`, `github_pr_review`, `github_report`, `github_pr_fix`) behind the same invariant: propose → approve the exact hash over MCP → effector executes exactly once, with no write credential in the worker.
+**Goal:** New kinds (`github_issue`, `github_pr_review`, `github_report`, `github_security_advisory`, `github_pr_fix`) behind the same invariant: propose → approve the exact hash over MCP → effector executes exactly once, with no write credential in the worker.
+
+**Owner decisions (2026-11-14, V2_ACTIONS §10):**
+- one GitHub App (`tierbound-mbt`, extended per phase);
+- `tierbound/review` is advisory, never a required check for now;
+- security findings go to private draft advisories;
+- Claude or GPT (provider-pluggable) for `review-pr` and `pr-fix`;
+- no auto-approval, ever.
 
 **Order: issue → review-pr → review-repo → pr-fix.** This differs from issue → review_pr → pr_fix → review_repo on purpose:
 - **`github_issue` first:** it's the smallest new effect. It forces the kind/tier/capability framework, and `review-repo` reuses it for its report issue.
@@ -720,7 +727,11 @@ Rejected options:
 
 **Sizing:** Phase 4 = one weekend, 5 = one, 6 = half, 7 = one, 8 = two. About 5.5 weekends.
 
-**Before Phase 4:** update AGENTS.md invariant 5 ("multiple action types" moves from out of scope to v2 under the kind policy) and invariant 1 (the worker holds only the read-only App key). Commit this as its own step: `docs(w4.0): AGENTS.md invariants for v2`.
+**Step 4.0 (before Phase 4):** update AGENTS.md:
+- **Invariant 5:** "multiple action types" moves from out of scope to v2 under the kind policy, and auto-approve stays out forever.
+- **Invariant 1:** the worker never holds the App key; it reads with tokens minted for it.
+
+Commit this as its own step: `docs(w4.0): AGENTS.md invariants for v2`.
 
 ### Phase 4 — Weekend 4: kinds framework + `github_issue`
 
@@ -771,23 +782,20 @@ Rejected options:
 
 **Commit:** `feat(w4.4): kind-aware get_action and exact-bytes MCP resources`
 
-#### Step 4.5 — Read-only App for the worker
+#### Step 4.5 — Read-token broker for the worker
 
-**Goal:** The worker's key can't mint a write token (V2_ACTIONS §3).
+**Goal:** The worker never holds the App key, but still reads with short-lived, down-scoped tokens (V2_ACTIONS §3).
 
-**Owner clicks:**
-1. Register `tierbound-reader` with Contents, Issues, Pull requests and Actions **read**, plus Metadata read.
-2. Install it on `tierbound` only.
-3. Save the key to `~/.config/tierbound/reader-app.pem` (chmod 600).
-
-**Files:** `worker/internal/githubro` mints its own installation token from the reader App. Remove `GITHUB_READ_TOKEN` from the runbook and `scripts/demo.sh`.
+**Files:**
+- `supabase/functions/github-read-token/`: authenticates the worker with `WORKER_TOKEN_SECRET`, a separate secret from the effector's; mints `access_tokens` for `repositories: [repo]` with read permissions only.
+- `worker/internal/githubro`: fetches and caches the token.
+- Remove `GITHUB_READ_TOKEN` from the runbook and `scripts/demo.sh`.
 
 **Done when:**
-- The worker proposes against hosted using only the reader key.
-- A test asserts the minted token's permissions are all `read` (from the access-token response).
-- `GITHUB_READ_TOKEN` is gone from docs and scripts.
+- `TestReadTokenBrokerMintsReadOnly` passes against the fake: the request body asks for read only, and a response granting more is rejected.
+- The worker proposes against hosted with no GitHub credential in its environment.
 
-**Commit:** `feat(w4.5): worker reads GitHub through a read-only App`
+**Commit:** `feat(w4.5): worker reads through a down-scoped token broker`
 
 ### Phase 5 — Weekend 5: `review-pr` (non-blocking)
 
@@ -820,6 +828,8 @@ Rejected options:
 **Files:**
 - `worker/config/review-pr.toml` (prompt, model, rule sources, `review-policy`);
 - `worker/internal/review` (inputs at `base_sha`, findings schema, `ground()` validator, policy verdict, COMMENT only in this phase).
+
+**Model key:** `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in the worker environment (`.env` or `~/.config/tierbound/`; never in git) for live runs and `-record`. CI replays recordings and needs no key. `internal/llm` gains the provider interface here (V2_ACTIONS §11).
 
 **Done when:**
 - `TestUngroundedFindingDropped` passes (three cases: a line outside the diff, a quote not verbatim, an unknown evidence id).
@@ -868,13 +878,13 @@ Rejected options:
 
 **Commit:** `feat(w6.1): blocking reviews require the block capability`
 
-#### Step 6.2 — Required status (opt-in)
+#### Step 6.2 — Advisory status, demo
 
-**Owner click** (open question 1 in V2_ACTIONS §10): branch protection on `main` requires `tierbound/review`.
+**Decision:** `tierbound/review` stays advisory. It is **not** a required check on `main`.
 
-**Done when:** the demo PR (`grant insert on approvals to tierbound_worker`) is blocked with a red `tierbound/review` citing AGENTS.md invariant 1 after approval. A clean PR goes green after approval.
+**Done when:** the demo PR (`grant insert on approvals to tierbound_worker`) shows `REQUEST_CHANGES` and a red `tierbound/review` citing AGENTS.md invariant 1 after approval, and merging is still possible. A clean PR goes green after approval. The runbook documents the one click that would make it required later.
 
-**Commit:** `docs(w6.2): required tierbound/review status and runbook`
+**Commit:** `docs(w6.2): advisory tierbound/review status and runbook`
 
 ### Phase 7 — Weekend 7: `review-repo`
 
@@ -893,7 +903,7 @@ Rejected options:
 **Done when:**
 - `TestRepoReviewRerunProposesNothing` passes.
 - `TestUncitedReportItemDropped` passes.
-- `TestSecurityDetailsNotInPublicBody` passes.
+- `TestSecurityDetailsNotInPublicBody` passes: the public body carries at most "N security findings reported privately".
 
 **Commit:** `feat(w7.2): review-repo synthesizes cited, deduped reports`
 
@@ -906,6 +916,21 @@ Rejected options:
 - `…OneReportUpdate` passes (concurrent invocations).
 
 **Commit:** `feat(w7.3): github_report create/update exactly once`
+
+#### Step 7.3b — `github_security_advisory` effect
+
+**Owner click:** add **Repository security advisories: write** to `tierbound-mbt` and accept the updated permissions on the installation.
+
+**Files:** `supabase/functions/effect-github/kinds/advisory.ts` (a draft advisory via `POST /security-advisories`, marker in the description), and the worker emitting one advisory proposal per new security fingerprint group.
+
+**Verify first:** whether the API accepts code (non-package) findings in `vulnerabilities`. If not, use private vulnerability reports, or keep the details in MCP only (V2_ACTIONS §4.4.1).
+
+**Done when:**
+- `TestAdvisoryCreatedOnceAsDraft` passes (concurrent invocations; the state stays `draft`).
+- `TestAdvisoryHasNoSecretValue` passes.
+- A rerun proposes no advisory for fingerprints that already have one.
+
+**Commit:** `feat(w7.3b): security findings become private draft advisories`
 
 #### Step 7.4 — Eval + triggers
 
@@ -920,9 +945,8 @@ Rejected options:
 #### Step 8.1 — Fixer App + checks-before-writes skeleton
 
 **Owner clicks:**
-1. Register `tierbound-fixer` with Contents write, Pull requests write and Metadata read.
-2. Install it on `tierbound` only, and add its key as an Edge Function secret for `effect-github-pr` only.
-3. Branch protection on `main`: require a PR, no bypass for the App, no force-push or deletion.
+1. Add **Contents: write** to `tierbound-mbt` (one App, V2_ACTIONS §3) and accept the updated permissions on the installation. Also confirm that the installation covers `tierbound` only.
+2. Branch protection on `main`: require a PR, no bypass for the App, no force-push or deletion.
 
 **Files:** `supabase/functions/effect-github-pr/` (hash, claim, policy, freshness via compare; no writes yet).
 
@@ -957,6 +981,8 @@ Rejected options:
 **Commit:** `feat(w8.3): draft PR from the approved diff, exactly once`
 
 #### Step 8.4 — Worker `pr-fix`
+
+**Model key:** `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, as in 5.3.
 
 **Files:** `worker/config/pr-fix.toml` (tier `code`), `worker/internal/fix` (base_sha pin, context gathering via the reader App, diff generation, pre-validation with `internal/patch` and the denylist), and `request_fix` (MCP) / the `tierbound:fix` label in `ingest`.
 
