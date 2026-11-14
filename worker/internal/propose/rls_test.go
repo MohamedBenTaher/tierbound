@@ -3,10 +3,12 @@ package propose
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // TestWorkerRoleDeniedOnApprovalsAndEffects is the plan step 1.6 denial test:
@@ -73,5 +75,53 @@ func TestWorkerRoleDeniedOnApprovalsAndEffects(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("worker could not insert into runs: %v", err)
+	}
+}
+
+// TestWorkerRoleCanUseItsQueues drives every queue operation the worker
+// performs as tierbound_worker itself (the other queue tests run as the
+// database owner): read and archive on jobs and jobs_issue, and the
+// dead-letter send to jobs_dead. Regression test for the missing grants
+// on queues created after the roles migration.
+func TestWorkerRoleCanUseItsQueues(t *testing.T) {
+	deps, _, cleanup := setup(t, true)
+	defer cleanup()
+
+	for _, queue := range []string{"jobs", "jobs_issue"} {
+		workerQueueRoundTrip(t, deps.Pool, queue)
+	}
+}
+
+// workerQueueRoundTrip sends one message as the owner, then reads, extends,
+// archives it and dead-letters a copy as tierbound_worker (rolled back). The
+// message is deleted on the way out even when a step fails.
+func workerQueueRoundTrip(t *testing.T, pool *pgxpool.Pool, queue string) {
+	t.Helper()
+	ctx := context.Background()
+	var msgID int64
+	if err := pool.QueryRow(ctx, `select pgmq.send($1, '{"delivery_id":"test-grants"}'::jsonb)`,
+		queue).Scan(&msgID); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = pool.Exec(ctx, `delete from pgmq.q_`+queue+` where msg_id = $1`, msgID)
+	}()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	id := strconv.FormatInt(msgID, 10)
+	steps := []struct{ name, sql string }{
+		{"set role", `set local role tierbound_worker`},
+		{"read " + queue, `select msg_id from pgmq.read('` + queue + `', 30, 10)`},
+		{"set_vt " + queue, `select msg_id from pgmq.set_vt('` + queue + `', ` + id + `, 60)`},
+		{"archive " + queue, `select pgmq.archive('` + queue + `', ` + id + `::bigint)`},
+		{"send jobs_dead", `select pgmq.send('jobs_dead', '{"delivery_id":"test-grants"}'::jsonb)`},
+	}
+	for _, s := range steps {
+		if _, err := tx.Exec(ctx, s.sql); err != nil {
+			t.Fatalf("%s as tierbound_worker: %v", s.name, err)
+		}
 	}
 }
