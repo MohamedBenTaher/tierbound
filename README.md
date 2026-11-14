@@ -71,7 +71,11 @@ on GitHub Pages.
 
 ## See it run
 
-https://github.com/user-attachments/assets/5318bc89-0223-430d-83ef-e0559691d8e8
+
+
+https://github.com/user-attachments/assets/91f61f07-50cf-4d53-a768-980b8b7df757
+
+
 
 - **Real run:** on the dogfood repo, [issue #1](https://github.com/MohamedBenTaher/tierbound/issues/1) got exactly one comment, 1.9 s after the approval in Cursor.
 - **Eval gate:** [PR #2](https://github.com/MohamedBenTaher/tierbound/pull/2) deliberately ships a worse prompt, and the `eval-gate` check fails it.
