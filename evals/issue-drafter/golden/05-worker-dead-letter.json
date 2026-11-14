@@ -1,0 +1,24 @@
+{
+  "id": "05-worker-dead-letter",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 205,
+    "title": "dead-lettered jobs are invisible",
+    "body": "Jobs that exhaust MaxAttempts move to jobs_dead, but nothing reports them: no MCP tool, no log summary. I found 12 there by accident.",
+    "labels": [
+      "enhancement",
+      "worker"
+    ]
+  },
+  "expect": {
+    "outcome": "issue",
+    "title_any": [
+      "dead",
+      "jobs_dead",
+      "dlq",
+      "visib",
+      "report"
+    ]
+  },
+  "must_not_say": []
+}

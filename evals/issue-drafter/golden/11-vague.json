@@ -1,0 +1,14 @@
+{
+  "id": "11-vague",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 211,
+    "title": "it doesn't work",
+    "body": "Tried it, doesn't work. Please fix.",
+    "labels": []
+  },
+  "expect": {
+    "outcome": "abstain"
+  },
+  "must_not_say": []
+}

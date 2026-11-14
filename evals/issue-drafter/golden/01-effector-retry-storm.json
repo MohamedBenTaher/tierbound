@@ -1,0 +1,25 @@
+{
+  "id": "01-effector-retry-storm",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 201,
+    "title": "effector keeps retrying a failed comment",
+    "body": "When GitHub returns 500, the effect row goes to failed and every replay retries immediately. During the outage on Nov 3 one action was attempted 40 times in a minute.",
+    "labels": [
+      "bug",
+      "effector"
+    ]
+  },
+  "expect": {
+    "outcome": "issue",
+    "title_any": [
+      "retr",
+      "effector",
+      "backoff"
+    ],
+    "label_any": [
+      "bug"
+    ]
+  },
+  "must_not_say": []
+}

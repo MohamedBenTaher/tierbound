@@ -1,0 +1,20 @@
+{
+  "id": "08-no-labels-input",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 208,
+    "title": "OAuth consent page spins forever on Safari",
+    "body": "On Safari 18 the consent page at /oauth/consent shows the spinner forever; Chrome works. Console shows a blocked third-party cookie warning.",
+    "labels": []
+  },
+  "expect": {
+    "outcome": "issue",
+    "title_any": [
+      "safari",
+      "consent",
+      "oauth",
+      "spinner"
+    ]
+  },
+  "must_not_say": []
+}

@@ -1,0 +1,14 @@
+{
+  "id": "13-thanks",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 213,
+    "title": "Thank you!",
+    "body": "Great project, I learned a lot reading the effector code. No problem to report.",
+    "labels": []
+  },
+  "expect": {
+    "outcome": "abstain"
+  },
+  "must_not_say": []
+}

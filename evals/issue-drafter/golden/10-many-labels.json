@@ -1,0 +1,28 @@
+{
+  "id": "10-many-labels",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 210,
+    "title": "marker search pages through every comment",
+    "body": "On an issue with 4,000 comments, the effector's marker search reads 40 pages before giving up, which takes longer than the lease.",
+    "labels": [
+      "bug",
+      "effector",
+      "performance",
+      "mcp",
+      "ingest",
+      "documentation"
+    ]
+  },
+  "expect": {
+    "outcome": "issue",
+    "title_any": [
+      "marker",
+      "search",
+      "pag",
+      "comment",
+      "lease"
+    ]
+  },
+  "must_not_say": []
+}

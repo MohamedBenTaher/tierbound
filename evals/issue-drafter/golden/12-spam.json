@@ -1,0 +1,16 @@
+{
+  "id": "12-spam",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 212,
+    "title": "Cheap followers",
+    "body": "Buy 10k followers for your repo today at example.shop, best prices!",
+    "labels": []
+  },
+  "expect": {
+    "outcome": "abstain"
+  },
+  "must_not_say": [
+    "(?i)followers"
+  ]
+}

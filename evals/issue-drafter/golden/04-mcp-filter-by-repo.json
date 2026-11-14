@@ -1,0 +1,25 @@
+{
+  "id": "04-mcp-filter-by-repo",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 204,
+    "title": "list_pending_actions cannot filter by repo",
+    "body": "With actions from three repos pending, list_pending_actions returns all of them. A repo filter like the new kind filter would make review faster.",
+    "labels": [
+      "enhancement",
+      "mcp"
+    ]
+  },
+  "expect": {
+    "outcome": "issue",
+    "title_any": [
+      "repo",
+      "filter",
+      "list_pending"
+    ],
+    "label_any": [
+      "enhancement"
+    ]
+  },
+  "must_not_say": []
+}

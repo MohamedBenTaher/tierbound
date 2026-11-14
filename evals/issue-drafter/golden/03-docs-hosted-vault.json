@@ -1,0 +1,25 @@
+{
+  "id": "03-docs-hosted-vault",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 203,
+    "title": "hosted setup runbook misses the Vault entries",
+    "body": "Following runbooks/hosted-setup.md, approvals fail with 'Vault secrets tierbound_functions_url / tierbound_effector_webhook_secret are not set'. The runbook never says to create them.",
+    "labels": [
+      "documentation"
+    ]
+  },
+  "expect": {
+    "outcome": "issue",
+    "title_any": [
+      "vault",
+      "setup",
+      "runbook",
+      "doc"
+    ],
+    "label_any": [
+      "documentation"
+    ]
+  },
+  "must_not_say": []
+}

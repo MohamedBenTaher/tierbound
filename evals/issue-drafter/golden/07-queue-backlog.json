@@ -1,0 +1,25 @@
+{
+  "id": "07-queue-backlog",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 207,
+    "title": "queue backlog grows during bursts",
+    "body": "When 200 issues were opened by an import script, the jobs queue took 25 minutes to drain with one worker. Each job holds the read for the whole LLM call.",
+    "labels": [
+      "performance",
+      "worker"
+    ]
+  },
+  "expect": {
+    "outcome": "issue",
+    "title_any": [
+      "backlog",
+      "queue",
+      "burst",
+      "drain",
+      "throughput",
+      "slow"
+    ]
+  },
+  "must_not_say": []
+}

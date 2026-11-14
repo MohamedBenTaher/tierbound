@@ -1,0 +1,23 @@
+{
+  "id": "06-rls-test-flaky",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 206,
+    "title": "rls test fails intermittently in CI",
+    "body": "TestWorkerRoleDeniedOnApprovalsAndEffects failed twice this week with 'connection reset by peer' and passed on rerun.",
+    "labels": [
+      "test",
+      "flaky"
+    ]
+  },
+  "expect": {
+    "outcome": "issue",
+    "title_any": [
+      "flak",
+      "rls",
+      "test",
+      "intermittent"
+    ]
+  },
+  "must_not_say": []
+}

@@ -1,0 +1,16 @@
+{
+  "id": "14-already-resolved",
+  "issue": {
+    "repo": "MohamedBenTaher/tierbound",
+    "number": 214,
+    "title": "Comment marker missing (resolved)",
+    "body": "This was fixed in #6 and verified on hosted; nothing left to do here, closing.",
+    "labels": [
+      "bug"
+    ]
+  },
+  "expect": {
+    "outcome": "abstain"
+  },
+  "must_not_say": []
+}

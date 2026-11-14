@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/MohamedBenTaher/tierbound/worker/internal/agentconfig"
@@ -132,7 +134,7 @@ func draftAll(cfg agentconfig.Config, hash string, set *evals.Set) (evals.Record
 
 func printReport(rep evals.Report) {
 	for _, r := range rep.Results {
-		fmt.Printf("  %-28s score %.2f  structure=%t area=%t label=%t", r.ID, r.Score, r.Structure, r.Area, r.Label)
+		fmt.Printf("  %-36s score %.2f  %s", r.ID, r.Score, checksLine(r))
 		for _, v := range r.Violations {
 			fmt.Printf("\n      MUST-NOT: %s", v)
 		}
@@ -143,6 +145,24 @@ func printReport(rep evals.Report) {
 	}
 	fmt.Printf("mean %.3f (threshold %.2f), must-not violations %d, missing %d\n",
 		rep.Mean, rep.Threshold, rep.Violations, len(rep.Missing))
+}
+
+// checksLine renders the scorer's checks: the issue scorer's named map, or
+// the comment scorer's three fixed checks.
+func checksLine(r evals.FixtureResult) string {
+	if r.Checks == nil {
+		return fmt.Sprintf("structure=%t area=%t label=%t", r.Structure, r.Area, r.Label)
+	}
+	names := make([]string, 0, len(r.Checks))
+	for name := range r.Checks {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	parts := make([]string, len(names))
+	for i, name := range names {
+		parts[i] = fmt.Sprintf("%s=%t", name, r.Checks[name])
+	}
+	return strings.Join(parts, " ")
 }
 
 func writeRecording(path string, rec evals.Recording) error {

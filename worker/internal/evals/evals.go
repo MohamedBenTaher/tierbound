@@ -1,5 +1,5 @@
-// Package evals loads the golden issue set and scores drafted comments
-// against it (plan steps 3.1-3.2). Scoring is pure: given the same outputs it
+// Package evals loads a golden set and scores an agent's drafts against it
+// (plan steps 3.1-3.2; issue drafts: plan step 4.7, issue.go). Scoring is pure: given the same outputs it
 // always returns the same verdict, so CI can replay recorded outputs for a
 // config_hash without calling the model.
 package evals
@@ -24,8 +24,13 @@ type Fixture struct {
 	Expect struct {
 		// AreaAny: the "Likely area" line must contain one of these.
 		AreaAny []string `json:"area_any"`
-		// LabelAny: the "Suggested label" line must contain one of these.
+		// LabelAny: comment scorer: the "Suggested label" line must contain
+		// one of these. Issue scorer (optional): the labels must include one.
 		LabelAny []string `json:"label_any"`
+		// Issue scorer only (issue.go).
+		Outcome  string   `json:"outcome"`   // "issue", "abstain" or "either"
+		TitleAny []string `json:"title_any"` // the title must contain one of these
+		BodyAny  []string `json:"body_any"`  // the body must contain one of these
 	} `json:"expect"`
 	// MustNotSay: regexes that must not match anywhere in the draft, on top
 	// of the rubric's global list.
@@ -52,7 +57,15 @@ type Rubric struct {
 	Threshold float64 `json:"threshold"`
 	// MustNotSay: global forbidden patterns (promises, dates, people).
 	MustNotSay []string `json:"must_not_say"`
+	// Scorer: "comment" (default; triage-drafter) or "issue" (issue.go).
+	Scorer string `json:"scorer"`
 }
+
+// Scorers.
+const (
+	ScorerComment = "comment"
+	ScorerIssue   = "issue"
+)
 
 // Set is a loaded, validated golden set.
 type Set struct {
@@ -70,6 +83,12 @@ func Load(goldenDir, rubricPath string) (*Set, error) {
 	}
 	if r.Threshold <= 0 || r.Threshold > 1 {
 		return nil, fmt.Errorf("evals: %s: threshold %v must be in (0, 1]", rubricPath, r.Threshold)
+	}
+	if r.Scorer == "" {
+		r.Scorer = ScorerComment
+	}
+	if r.Scorer != ScorerComment && r.Scorer != ScorerIssue {
+		return nil, fmt.Errorf("evals: %s: scorer %q must be %q or %q", rubricPath, r.Scorer, ScorerComment, ScorerIssue)
 	}
 	global, err := compileAll(rubricPath, r.MustNotSay)
 	if err != nil {
@@ -89,7 +108,7 @@ func Load(goldenDir, rubricPath string) (*Set, error) {
 		if err := readJSON(p, &f); err != nil {
 			return nil, err
 		}
-		if err := f.validate(); err != nil {
+		if err := f.validate(r.Scorer); err != nil {
 			return nil, fmt.Errorf("evals: %s: %w", p, err)
 		}
 		if _, dup := s.mustNot[f.ID]; dup {
@@ -105,12 +124,14 @@ func Load(goldenDir, rubricPath string) (*Set, error) {
 	return s, nil
 }
 
-func (f Fixture) validate() error {
+func (f Fixture) validate(scorer string) error {
 	switch {
 	case f.ID == "":
 		return errors.New("id is required")
 	case f.Issue.Repo == "" || f.Issue.Number < 1 || f.Issue.Title == "":
 		return errors.New("issue needs repo, number and title")
+	case scorer == ScorerIssue:
+		return f.validateIssueExpect()
 	case len(f.Expect.AreaAny) == 0 || len(f.Expect.LabelAny) == 0:
 		return errors.New("expect needs area_any and label_any")
 	}
@@ -125,6 +146,8 @@ type FixtureResult struct {
 	Area       bool     `json:"area"`
 	Label      bool     `json:"label"`
 	Violations []string `json:"violations,omitempty"`
+	// Checks: the issue scorer's named checks (issue.go).
+	Checks map[string]bool `json:"checks,omitempty"`
 }
 
 // Report is the verdict for a whole set of drafts.
@@ -161,20 +184,30 @@ func (s *Set) Score(outputs map[string]string) Report {
 }
 
 func (s *Set) scoreOne(f Fixture, out string) FixtureResult {
+	if s.Rubric.Scorer == ScorerIssue {
+		return s.scoreIssue(f, out)
+	}
 	r := FixtureResult{ID: f.ID}
 	summary, area, label := section(out, "summary"), section(out, "likely area"), section(out, "suggested label")
 	r.Structure = summary != "" && area != "" && label != ""
 	r.Area = containsAny(area, f.Expect.AreaAny)
 	r.Label = containsAny(label, f.Expect.LabelAny)
-	for _, re := range s.mustNot[f.ID] {
-		if m := re.FindString(out); m != "" {
-			r.Violations = append(r.Violations, fmt.Sprintf("%s matched %q", re, m))
-		}
-	}
+	r.Violations = s.mustNotHits(f, out)
 	if len(r.Violations) == 0 {
 		r.Score = (b2f(r.Structure) + b2f(r.Area) + b2f(r.Label)) / 3
 	}
 	return r
+}
+
+// mustNotHits lists every global or fixture must-not pattern out matches.
+func (s *Set) mustNotHits(f Fixture, out string) []string {
+	var hits []string
+	for _, re := range s.mustNot[f.ID] {
+		if m := re.FindString(out); m != "" {
+			hits = append(hits, fmt.Sprintf("%s matched %q", re, m))
+		}
+	}
+	return hits
 }
 
 // section returns the text after "<name>:" on its line (case-insensitive,
