@@ -1,0 +1,9 @@
+{
+  "name": "tierbound-demo-record",
+  "private": true,
+  "type": "module",
+  "description": "Records the public-page clips of the tierbound demo (docs/demo-script.md). Kept out of the main project.",
+  "dependencies": {
+    "playwright": "1.57.0"
+  }
+}
