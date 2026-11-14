@@ -9,34 +9,6 @@ import (
 	"github.com/MohamedBenTaher/tierbound/worker/internal/hashing"
 )
 
-func TestParseIssueDraft(t *testing.T) {
-	long := strings.Repeat("x", maxIssueTitle+1)
-	cases := []struct {
-		name, in string
-		ok       bool
-	}{
-		{"valid", `{"title":"Fix retry","body":"## Problem\nx","labels":["bug"]}`, true},
-		{"valid, no labels key", `{"title":"Fix retry","body":"b"}`, true},
-		{"markdown fence", "```json\n{\"title\":\"t\",\"body\":\"b\",\"labels\":[]}\n```", false},
-		{"preamble", `Here you go: {"title":"t","body":"b","labels":[]}`, false},
-		{"unknown field", `{"title":"t","body":"b","labels":[],"assignee":"x"}`, false},
-		{"trailing object", `{"title":"t","body":"b","labels":[]} {}`, false},
-		{"title too long", `{"title":"` + long + `","body":"b","labels":[]}`, false},
-		{"multi-line title", `{"title":"a\nb","body":"b","labels":[]}`, false},
-		{"empty body", `{"title":"t","body":"  ","labels":[]}`, false},
-		{"empty label", `{"title":"t","body":"b","labels":[" "]}`, false},
-		{"eleven labels", `{"title":"t","body":"b","labels":["1","2","3","4","5","6","7","8","9","10","11"]}`, false},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			_, err := ParseIssueDraft(c.in)
-			if (err == nil) != c.ok {
-				t.Fatalf("ParseIssueDraft(%q) err = %v, want ok=%v", c.in, err, c.ok)
-			}
-		})
-	}
-}
-
 // TestIssueAgentProposesOneIssue is plan step 4.6: an agent whose tool_grant
 // has github.propose_issue reads its own queue and proposes exactly one
 // github_issue action (target {repo}), hashed like the effector recomputes.
@@ -45,16 +17,7 @@ func TestIssueAgentProposesOneIssue(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	deps.Config.ToolGrant = []string{"github.read_issues", agentconfig.GrantProposeIssue}
-	deps.Config.Queue = "jobs_issue"
-	hash, err := deps.Config.Hash()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := deps.Pool.Exec(ctx, `update public.agents set config_hash = $2, evals_passed_hash = $2
-		where id = $1::uuid`, agentID, hash); err != nil {
-		t.Fatal(err)
-	}
+	issueAgent(t, &deps, agentID)
 	deps.Drafter = fakeDrafter{body: `{"title":"Retry the effector once","body":"## Problem\nIt retries forever.\n\n## Done when\n- [ ] one retry","labels":["bug"]}`}
 	defer func() {
 		_, _ = deps.Pool.Exec(ctx, `delete from pgmq.q_jobs_issue where message->>'delivery_id' like 'test-%'`)
@@ -90,6 +53,60 @@ func TestIssueAgentProposesOneIssue(t *testing.T) {
 	}
 	if kind != KindGitHubIssue || gotHash != want || recomputed != want {
 		t.Fatalf("got kind %s hash %s (SQL %s), want github_issue %s", kind, gotHash, recomputed, want)
+	}
+}
+
+// issueAgent turns the setup agent into an issue-proposing agent on the
+// jobs_issue queue, registered and gated for its new config_hash.
+func issueAgent(t *testing.T, deps *Deps, agentID string) {
+	t.Helper()
+	ctx := context.Background()
+	deps.Config.ToolGrant = []string{"github.read_issues", agentconfig.GrantProposeIssue}
+	deps.Config.Queue = "jobs_issue"
+	hash, err := deps.Config.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := deps.Pool.Exec(ctx, `update public.agents set config_hash = $2, evals_passed_hash = $2
+		where id = $1::uuid`, agentID, hash); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Plan step 4.7: an abstain reply proposes nothing, records the run as
+// skipped with the reason, and archives the job instead of retrying it.
+func TestIssueAgentAbstainProposesNothing(t *testing.T) {
+	deps, agentID, cleanup := setup(t, true)
+	defer cleanup()
+	ctx := context.Background()
+	issueAgent(t, &deps, agentID)
+	deps.Drafter = fakeDrafter{body: `{"abstain":"no actionable problem in the input"}`}
+
+	body := []byte(`{"repo":"MohamedBenTaher/tierbound","issue_number":10,"delivery_id":"test-abstain"}`)
+	if err := deps.Queue.Send(ctx, "jobs_issue", body); err != nil {
+		t.Fatal(err)
+	}
+	if processed, err := ProcessOne(ctx, deps); err != nil || !processed {
+		t.Fatalf("processed=%v err=%v, want processed without error", processed, err)
+	}
+	if n := countActions(t, deps, agentID); n != 0 {
+		t.Fatalf("abstain proposed %d actions, want 0", n)
+	}
+	var status, reason string
+	if err := deps.Pool.QueryRow(ctx, `select status, coalesce(error, '') from public.runs
+		where agent_id = $1::uuid`, agentID).Scan(&status, &reason); err != nil {
+		t.Fatal(err)
+	}
+	if status != "skipped" || !strings.Contains(reason, "no actionable problem") {
+		t.Fatalf("run = %s %q, want skipped with the abstain reason", status, reason)
+	}
+	var left int
+	if err := deps.Pool.QueryRow(ctx, `select count(*) from pgmq.q_jobs_issue
+		where message->>'delivery_id' = 'test-abstain'`).Scan(&left); err != nil {
+		t.Fatal(err)
+	}
+	if left != 0 {
+		t.Fatalf("abstained job still queued (%d), want archived", left)
 	}
 }
 

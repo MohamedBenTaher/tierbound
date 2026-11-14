@@ -121,10 +121,7 @@ func attempt(ctx context.Context, d Deps, msg pgmq.Message, job Job, agent *agen
 	// SPEC sections 2 and 5 (plan step 3.3): anything the activation rule
 	// refuses is skipped, not retried.
 	if reason := activationError(agent, configHash); reason != nil {
-		if err := finishRun(ctx, d.Pool, runID, "skipped", reason); err != nil {
-			return err
-		}
-		return d.Queue.Archive(ctx, d.Config.QueueName(), msg.ID)
+		return skip(ctx, d, msg, runID, reason)
 	}
 
 	issue, err := d.Fetcher.FetchIssue(ctx, job.Repo, job.IssueNumber)
@@ -141,6 +138,9 @@ func attempt(ctx context.Context, d Deps, msg pgmq.Message, job Job, agent *agen
 		return err
 	}
 	p, err := buildProposal(kindFor(d.Config), job, draft)
+	if errors.Is(err, errAbstained) {
+		return skip(ctx, d, msg, runID, err)
+	}
 	if err != nil {
 		return err
 	}
@@ -158,6 +158,15 @@ func attempt(ctx context.Context, d Deps, msg pgmq.Message, job Job, agent *agen
 	// A unique violation means an earlier attempt already inserted this exact
 	// action (at-least-once delivery): exactly one action is the invariant.
 	if err := finishRun(ctx, d.Pool, runID, "succeeded", nil); err != nil {
+		return err
+	}
+	return d.Queue.Archive(ctx, d.Config.QueueName(), msg.ID)
+}
+
+// skip records the run as skipped with reason and archives the job: nothing
+// to propose, and retrying would not change that.
+func skip(ctx context.Context, d Deps, msg pgmq.Message, runID string, reason error) error {
+	if err := finishRun(ctx, d.Pool, runID, "skipped", reason); err != nil {
 		return err
 	}
 	return d.Queue.Archive(ctx, d.Config.QueueName(), msg.ID)

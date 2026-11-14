@@ -1,21 +1,11 @@
 package propose
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
-	"unicode/utf8"
 
 	"github.com/MohamedBenTaher/tierbound/worker/internal/agentconfig"
-)
-
-// Issue draft limits (V2_ACTIONS 4.1). The effector re-checks the payload,
-// and the labels against the repo, before it posts.
-const (
-	maxIssueTitle  = 80
-	maxIssueLabels = 10
+	"github.com/MohamedBenTaher/tierbound/worker/internal/issuedraft"
 )
 
 // proposal is one action envelope before hashing: what the human approves.
@@ -25,12 +15,9 @@ type proposal struct {
 	payload map[string]any
 }
 
-// IssueDraft is the JSON an issue-proposing agent must reply with.
-type IssueDraft struct {
-	Title  string   `json:"title"`
-	Body   string   `json:"body"`
-	Labels []string `json:"labels"`
-}
+// errAbstained: the agent read the input and declined to propose. The run
+// is recorded as skipped and the job archived; it is not retried.
+var errAbstained = errors.New("agent abstained")
 
 // kindFor maps an agent config to the one kind it proposes: the tool grant
 // says so (and is part of config_hash), so a different kind is a different
@@ -51,9 +38,12 @@ func buildProposal(kind string, job Job, draft string) (proposal, error) {
 			payload: map[string]any{"body": draft},
 		}, nil
 	}
-	d, err := ParseIssueDraft(draft)
+	d, err := issuedraft.Parse(draft)
 	if err != nil {
 		return proposal{}, err
+	}
+	if d.Abstained() {
+		return proposal{}, fmt.Errorf("%w: %s", errAbstained, d.Abstain)
 	}
 	labels := make([]any, len(d.Labels))
 	for i, l := range d.Labels {
@@ -64,44 +54,4 @@ func buildProposal(kind string, job Job, draft string) (proposal, error) {
 		target:  map[string]any{"repo": job.Repo},
 		payload: map[string]any{"title": d.Title, "body": d.Body, "labels": labels},
 	}, nil
-}
-
-// ParseIssueDraft strictly decodes and validates an issue draft: one JSON
-// object, no unknown fields, a one-line title of at most 80 characters, a
-// non-empty body, and at most 10 non-empty labels. A bad draft is never
-// proposed; the job retries and is dead-lettered after MaxAttempts.
-func ParseIssueDraft(s string) (IssueDraft, error) {
-	dec := json.NewDecoder(bytes.NewReader([]byte(strings.TrimSpace(s))))
-	dec.DisallowUnknownFields()
-	var d IssueDraft
-	if err := dec.Decode(&d); err != nil {
-		return IssueDraft{}, fmt.Errorf("issue draft is not the expected JSON object: %w", err)
-	}
-	if dec.More() {
-		return IssueDraft{}, errors.New("issue draft has trailing content after the JSON object")
-	}
-	d.Title = strings.TrimSpace(d.Title)
-	d.Body = strings.TrimSpace(d.Body)
-	if d.Labels == nil {
-		d.Labels = []string{}
-	}
-	return d, d.validate()
-}
-
-func (d IssueDraft) validate() error {
-	n := utf8.RuneCountInString(d.Title)
-	switch {
-	case n == 0 || n > maxIssueTitle || strings.ContainsAny(d.Title, "\r\n"):
-		return fmt.Errorf("issue draft title must be one line of 1-%d characters", maxIssueTitle)
-	case d.Body == "":
-		return errors.New("issue draft body is empty")
-	case len(d.Labels) > maxIssueLabels:
-		return fmt.Errorf("issue draft has more than %d labels", maxIssueLabels)
-	}
-	for _, l := range d.Labels {
-		if strings.TrimSpace(l) == "" {
-			return errors.New("issue draft has an empty label")
-		}
-	}
-	return nil
 }
