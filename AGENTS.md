@@ -1,23 +1,24 @@
 # AGENTS.md
 
-tierbound is a Supabase-native agent runner that separates **deciding** from **doing**: a worker can only propose an outside action (a GitHub triage comment), a human approves the exact payload hash over a remote MCP server, and a separate Edge Function that holds the credential executes it exactly once. There is no web dashboard — MCP (from Cursor) is the UI.
+tierbound is a Supabase-native agent runner that separates **deciding** from **doing**: a worker can only propose an outside action (a GitHub comment or issue; more kinds in `docs/V2_ACTIONS.md`), a human approves the exact payload hash over a remote MCP server, and a separate Edge Function that holds the credential executes it exactly once. There is no web dashboard — MCP (from Cursor) is the UI.
 
 ## Invariants (never break these)
 
-1. **The worker never holds write credentials.** Read-only GitHub token only. It may insert into `runs` and `proposed_actions`, nothing else.
+1. **The worker never holds write credentials or the GitHub App key.** It reads GitHub with read-only tokens only (v2: short-lived tokens down-scoped to one repo, minted for it by the `github-read-token` Edge Function). It may insert into `runs` and `proposed_actions`, nothing else; the tier trigger refuses a kind above the agent's tier.
 2. **Approvals bind to `payload_hash`.** Approving a job id is not enough; the hash must match sha256 of the canonical `{kind, target, payload}` envelope, so an approval cannot be reused for other text, another issue, or another action kind (approve and effect both recompute). One definition: `hashing.ActionHash` (Go) / `actionHash` (TS) / `public.tierbound_action_hash` (SQL), all pinned by `testdata/action_hash_vectors.json`. Owners decide only through `public.tierbound_decide_action` (one locked transaction); they have no direct write grants on `proposed_actions` or `approvals` — do not add any.
 3. **The effector executes at most once** via a unique claim on `effects.action_id` (`INSERT … ON CONFLICT DO NOTHING RETURNING`). A retry takes over only a `failed` row or a `claimed` row whose lease expired, and only while `external_id` is null (one atomic `UPDATE … RETURNING`, `attempts` as fencing token); marker-based dedupe on GitHub prevents double posts after timeout-after-success.
 4. **No web dashboard.** MCP is the UI. Do not add a React app, admin panel, or chat surface in v1.
-5. **Out of scope for v1:** BigQuery/warehouse, multiple agents or action types, Slack/email, auto-approve, commitment tier (except as an RLS denial test), custom OAuth server, agent frameworks (LangGraph etc.), multi-tenancy beyond owner RLS, Kubernetes.
+5. **Out of scope:** auto-approve, **forever**: every action of every kind needs a human approval of its exact hash. New action kinds (v2) are allowed only through the kind policy (`public.kind_policy`, `docs/V2_ACTIONS.md`): a migration adding the kind and its minimum tier, a vector in `testdata/action_hash_vectors.json`, an effector handler with marker dedupe, and an MCP renderer, together. Also out of scope: BigQuery/warehouse, Slack/email, commitment tier (except as an RLS denial test), custom OAuth server, agent frameworks (LangGraph etc.), multi-tenancy beyond owner RLS, Kubernetes.
 
 ## Repo layout
 
 ```
 docs/SPEC.md                 product + architecture
 docs/IMPLEMENTATION_PLAN.md  numbered steps with done-when checks
+docs/V2_ACTIONS.md           v2 action kinds design (owner decisions in §10)
 docs/PSTACK.md               vendored pstack note
 supabase/migrations/         Postgres schema, roles, RLS, pgmq
-supabase/functions/          ingest, mcp, effect-github-comment
+supabase/functions/          ingest, mcp, effect-github-comment (routes every kind)
 worker/                      Go pgmq consumer (module github.com/MohamedBenTaher/tierbound/worker)
 evals/                       golden set + CI gate
 docs/postmortems/            incident writeups
