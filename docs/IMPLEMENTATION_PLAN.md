@@ -797,7 +797,26 @@ Commit this as its own step: `docs(w4.0): AGENTS.md invariants for v2`.
 
 **Commit:** `feat(w4.5): worker reads through a down-scoped token broker`
 
-### Phase 5 — Weekend 5: `review-pr` (non-blocking)
+#### Step 4.6 — Worker proposes `github_issue`
+
+**Goal:** An agent proposes issues through the same exactly-once seam as comments.
+
+**Files:**
+- `worker/internal/propose/proposal.go`: the kind comes from `tool_grant` (`github.propose_issue`, inside config_hash); a strict JSON draft parser.
+- `agentconfig`: `queue`, which is not hashed; one queue per agent.
+- `worker/config/issue-drafter.toml` and its prompt.
+- Migration: the `jobs_issue` queue.
+
+**Done when:**
+- `TestIssueAgentProposesOneIssue` passes (two deliveries give one action; the Go hash equals the SQL recomputation).
+- `TestParseIssueDraft` refuses fences, preambles, unknown fields and over-long titles.
+- The triage-drafter config_hash is unchanged.
+
+**Not yet:** issue-drafter's golden set. Until it passes the gate, the activation rule keeps the agent from proposing.
+
+**Commit:** `feat(w4.6): worker proposes github_issue for issue-granted agents`
+
+: `review-pr` (non-blocking)
 
 #### Step 5.1 — Evidence workflow
 

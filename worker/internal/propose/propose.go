@@ -1,4 +1,5 @@
-// Package propose turns one queue job into at most one proposed_action.
+// Package propose turns one queue job into at most one proposed_action, of
+// the one kind the agent's config proposes (proposal.go).
 //
 // This is the exactly-once seam (AGENTS.md invariant 3): pgmq delivers at
 // least once (visibility timeout), the unique idempotency_key on
@@ -33,7 +34,6 @@ const (
 	// instead of retried.
 	MaxAttempts = 3
 
-	queueJobs = "jobs"
 	queueDead = "jobs_dead"
 
 	readVTSeconds = 60
@@ -71,7 +71,7 @@ type Deps struct {
 // means that job did not complete; pgmq retries it after the visibility
 // timeout until MaxAttempts, then it is dead-lettered.
 func ProcessOne(ctx context.Context, d Deps) (bool, error) {
-	msgs, err := d.Queue.Read(ctx, queueJobs, readVTSeconds, 1)
+	msgs, err := d.Queue.Read(ctx, d.Config.QueueName(), readVTSeconds, 1)
 	if err != nil {
 		return false, err
 	}
@@ -124,7 +124,7 @@ func attempt(ctx context.Context, d Deps, msg pgmq.Message, job Job, agent *agen
 		if err := finishRun(ctx, d.Pool, runID, "skipped", reason); err != nil {
 			return err
 		}
-		return d.Queue.Archive(ctx, queueJobs, msg.ID)
+		return d.Queue.Archive(ctx, d.Config.QueueName(), msg.ID)
 	}
 
 	issue, err := d.Fetcher.FetchIssue(ctx, job.Repo, job.IssueNumber)
@@ -133,24 +133,25 @@ func attempt(ctx context.Context, d Deps, msg pgmq.Message, job Job, agent *agen
 	}
 	// The draft call is slow; extend the lease so the message is not redelivered
 	// mid-draft.
-	if err := d.Queue.SetVT(ctx, queueJobs, msg.ID, slowVTSeconds); err != nil {
+	if err := d.Queue.SetVT(ctx, d.Config.QueueName(), msg.ID, slowVTSeconds); err != nil {
 		return err
 	}
-	body, err := d.Drafter.DraftComment(ctx, d.Config.Prompt, FormIssueMessage(issue))
+	draft, err := d.Drafter.DraftComment(ctx, d.Config.Prompt, FormIssueMessage(issue))
 	if err != nil {
 		return err
 	}
-
-	payload := map[string]any{"body": body}
-	target := map[string]any{"repo": job.Repo, "issue_number": job.IssueNumber}
-	payloadHash, err := hashing.ActionHash(KindGitHubComment, target, payload)
+	p, err := buildProposal(kindFor(d.Config), job, draft)
+	if err != nil {
+		return err
+	}
+	payloadHash, err := hashing.ActionHash(p.kind, p.target, p.payload)
 	if err != nil {
 		return err
 	}
 	// Plan step 1.4: idempotency_key = agent_id:repo:issue:config_hash.
 	key := fmt.Sprintf("%s:%s:%d:%s", agent.ID, job.Repo, job.IssueNumber, configHash)
 
-	err = insertAction(ctx, d.Pool, runID, target, payload, payloadHash, key)
+	err = insertAction(ctx, d.Pool, runID, p, payloadHash, key)
 	if err != nil && !isUniqueViolation(err) {
 		return err
 	}
@@ -159,14 +160,14 @@ func attempt(ctx context.Context, d Deps, msg pgmq.Message, job Job, agent *agen
 	if err := finishRun(ctx, d.Pool, runID, "succeeded", nil); err != nil {
 		return err
 	}
-	return d.Queue.Archive(ctx, queueJobs, msg.ID)
+	return d.Queue.Archive(ctx, d.Config.QueueName(), msg.ID)
 }
 
 func deadLetter(ctx context.Context, d Deps, msg pgmq.Message, cause error) error {
 	if err := d.Queue.Send(ctx, queueDead, msg.Body); err != nil {
 		return fmt.Errorf("dead-letter failed: %w (cause: %w)", err, cause)
 	}
-	if err := d.Queue.Archive(ctx, queueJobs, msg.ID); err != nil {
+	if err := d.Queue.Archive(ctx, d.Config.QueueName(), msg.ID); err != nil {
 		return fmt.Errorf("archive after dead-letter failed: %w (cause: %w)", err, cause)
 	}
 	return cause
@@ -252,13 +253,13 @@ func finishRun(ctx context.Context, pool *pgxpool.Pool, runID, status string, ca
 }
 
 func insertAction(ctx context.Context, pool *pgxpool.Pool, runID string,
-	target, payload map[string]any, payloadHash, idempotencyKey string,
+	p proposal, payloadHash, idempotencyKey string,
 ) error {
-	targetJSON, err := json.Marshal(target)
+	targetJSON, err := json.Marshal(p.target)
 	if err != nil {
 		return fmt.Errorf("marshal target: %w", err)
 	}
-	payloadJSON, err := json.Marshal(payload)
+	payloadJSON, err := json.Marshal(p.payload)
 	if err != nil {
 		return fmt.Errorf("marshal payload: %w", err)
 	}
@@ -266,7 +267,7 @@ func insertAction(ctx context.Context, pool *pgxpool.Pool, runID string,
 		insert into public.proposed_actions
 			(run_id, kind, target, payload, payload_hash, idempotency_key)
 		values ($1::uuid, $2, $3::jsonb, $4::jsonb, $5, $6)`,
-		runID, KindGitHubComment, string(targetJSON), string(payloadJSON),
+		runID, p.kind, string(targetJSON), string(payloadJSON),
 		payloadHash, idempotencyKey)
 	if err != nil {
 		return fmt.Errorf("insert proposed_action: %w", err)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 
 	"github.com/BurntSushi/toml"
@@ -24,6 +25,16 @@ const (
 	TierDraft Tier = "draft"
 )
 
+// GrantProposeIssue in tool_grant makes the agent propose github_issue
+// actions instead of github_comment (plan step 4.6). tool_grant is part of
+// config_hash, so switching kinds re-runs the eval gate.
+const GrantProposeIssue = "github.propose_issue"
+
+// DefaultQueue is the pgmq queue ingest feeds (plan step 1.3).
+const DefaultQueue = "jobs"
+
+var queueNameRE = regexp.MustCompile(`^[a-z][a-z0-9_]{0,40}$`)
+
 // Config is one agent's pinned config. Prompt holds the loaded prompt
 // content because the prompt, not its path, is part of the config identity.
 type Config struct {
@@ -32,7 +43,10 @@ type Config struct {
 	Model      string   `toml:"model"`
 	PromptPath string   `toml:"prompt_path"`
 	ToolGrant  []string `toml:"tool_grant"`
-	Prompt     string   `toml:"-"`
+	// Queue is the pgmq queue this agent's worker reads (default "jobs").
+	// Not part of config_hash: it routes jobs, it does not change behaviour.
+	Queue  string `toml:"queue"`
+	Prompt string `toml:"-"`
 }
 
 // Load reads a TOML config file and its prompt file. prompt_path resolves
@@ -54,6 +68,9 @@ func Load(path string) (Config, error) {
 	}
 	if len(c.ToolGrant) == 0 {
 		return Config{}, fmt.Errorf("agentconfig: %s: tool_grant must not be empty", path)
+	}
+	if c.Queue != "" && !queueNameRE.MatchString(c.Queue) {
+		return Config{}, fmt.Errorf("agentconfig: %s: queue %q: want lowercase letters, digits, underscores", path, c.Queue)
 	}
 	if c.PromptPath == "" {
 		return Config{}, fmt.Errorf("agentconfig: %s: prompt_path is required", path)
@@ -79,4 +96,17 @@ func (c Config) Hash() (string, error) {
 		"tool_grant": grant,
 		"tier":       string(c.Tier),
 	})
+}
+
+// QueueName is the pgmq queue to read: Queue, or DefaultQueue when unset.
+func (c Config) QueueName() string {
+	if c.Queue == "" {
+		return DefaultQueue
+	}
+	return c.Queue
+}
+
+// Grants reports whether tool_grant contains grant.
+func (c Config) Grants(grant string) bool {
+	return slices.Contains(c.ToolGrant, grant)
 }

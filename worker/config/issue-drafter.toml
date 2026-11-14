@@ -1,0 +1,17 @@
+# issue-drafter agent config. Plan step 4.6 (docs/V2_ACTIONS.md 4.1).
+# Proposes github_issue actions: one new, self-contained follow-up issue
+# drafted from an existing issue. config_hash covers prompt, model,
+# tool_grant and tier; `queue` only routes jobs and is not hashed.
+#
+# Inactive until its own eval set passes the gate for this exact hash
+# (activation rule, SPEC section 5): evals_passed_hash = config_hash.
+
+name = "issue-drafter"
+tier = "draft"
+model = "openai/gpt-oss-20b"
+prompt_path = "prompts/issue-drafter.md"
+
+# github.propose_issue: this agent proposes github_issue, never comments.
+tool_grant = ["github.read_issues", "github.propose_issue"]
+
+queue = "jobs_issue"
