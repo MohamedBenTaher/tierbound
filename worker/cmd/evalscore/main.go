@@ -121,15 +121,28 @@ func draftAll(cfg agentconfig.Config, hash string, set *evals.Set) (evals.Record
 		Outputs:    map[string]string{},
 	}
 	for _, f := range set.Fixtures {
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-		out, err := client.DraftComment(ctx, cfg.Prompt, propose.FormIssueMessage(f.Issue.GitHub()))
-		cancel()
+		out, err := draftWithBackoff(client, cfg.Prompt, propose.FormIssueMessage(f.Issue.GitHub()))
 		if err != nil {
 			return evals.Recording{}, fmt.Errorf("fixture %s: %w", f.ID, err)
 		}
 		rec.Outputs[f.ID] = out
 	}
 	return rec, nil
+}
+
+// draftWithBackoff retries rate-limited (HTTP 429) calls a few times: a
+// golden set is a burst of requests, and free model tiers cap tokens per
+// minute. Any other error returns at once.
+func draftWithBackoff(client *llm.Client, prompt, msg string) (string, error) {
+	for attempt := 1; ; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		out, err := client.DraftComment(ctx, prompt, msg)
+		cancel()
+		if err == nil || attempt == 6 || !strings.Contains(err.Error(), "status 429") {
+			return out, err
+		}
+		time.Sleep(time.Duration(attempt) * 10 * time.Second)
+	}
 }
 
 func printReport(rep evals.Report) {

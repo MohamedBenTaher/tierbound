@@ -1,6 +1,8 @@
 # evals
 
-Golden issue set and the CI eval gate (plan steps 3.1-3.3).
+Golden issue set and the CI eval gate (plan steps 3.1-3.3). This directory
+holds triage-drafter's set; `issue-drafter/` holds the issue-drafter set
+(plan step 4.7, same pattern). `gate.sh` gates every agent.
 
 - `golden/*.json` — 15 issues modelled on this repo's components, each with the
   expected area / label and fixture-specific must-not-say patterns.
@@ -10,7 +12,7 @@ Golden issue set and the CI eval gate (plan steps 3.1-3.3).
   golden set. Committed, so CI can replay them without an API key.
 - `gate.sh` — CI entry point: replays the recording for the config in the
   commit; red if it is missing or scores below the rubric.
-- `promote.sh` — after merge: re-runs the gate and sets
+- `promote.sh` — after merge (`AGENT_CONFIG=` picks the agent): re-runs the gate and sets
   `config_hash = evals_passed_hash` for that agent on the linked project.
 
 A draft agent proposes only when the config the worker runs, the registered

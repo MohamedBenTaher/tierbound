@@ -33,9 +33,9 @@ jobs:
       - name: Run pre-commit
         run: pre-commit run --all-files
 
-  # Plan step 3.2: replays evals/results/<config_hash>.json for the agent
-  # config in this commit; red if the recording is missing or scores below
-  # evals/rubric.json. No secrets needed. If the repo has a GROQ_API_KEY
+  # Plan steps 3.2, 4.7: for every agent config (triage-drafter,
+  # issue-drafter) replays its recording for the config_hash in this commit;
+  # red if one is missing or scores below that agent's rubric. No secrets needed. If the repo has a GROQ_API_KEY
   # Actions secret and the EVAL_LIVE variable is "1", it also drafts live.
   eval-gate:
     runs-on: ubuntu-latest

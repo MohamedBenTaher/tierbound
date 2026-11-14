@@ -812,7 +812,7 @@ Commit this as its own step: `docs(w4.0): AGENTS.md invariants for v2`.
 - `TestParseIssueDraft` refuses fences, preambles, unknown fields and over-long titles.
 - The triage-drafter config_hash is unchanged.
 
-**Not yet:** issue-drafter's golden set. Until it passes the gate, the activation rule keeps the agent from proposing.
+**Not yet:** issue-drafter's golden set (step 4.7). Until it passes the gate, the activation rule keeps the agent from proposing.
 
 **Commit:** `feat(w4.6): worker proposes github_issue for issue-granted agents`
 
