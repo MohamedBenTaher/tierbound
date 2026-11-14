@@ -154,8 +154,11 @@ async function init() {
     $("status").textContent = "Could not load authorization: " + error.message;
     return;
   }
-  $("status").textContent = "A client wants to act on your behalf.";
-  $("client").textContent = data.client_name ?? data.client_id;
+  // supabase-js returns the client as data.client { id, name, uri, logo_uri }.
+  const client = data.client ?? {};
+  const clientName = client.name || data.client_name || client.id || data.client_id || "An MCP client";
+  $("status").textContent = `${clientName} wants to act on your behalf.`;
+  $("client").textContent = clientName;
   $("scopes").textContent = data.scope ?? "(none)";
   $("details").hidden = false;
 }
