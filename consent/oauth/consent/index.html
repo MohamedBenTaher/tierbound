@@ -7,31 +7,105 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>tierbound consent</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Authorize · tierbound</title>
+<link rel="icon" type="image/svg+xml" href="../../favicon.svg">
 <style>
-  body { font: 16px/1.5 system-ui, sans-serif; max-width: 32rem; margin: 4rem auto; padding: 0 1rem; }
-  button { font: inherit; padding: .5rem 1rem; margin-right: .5rem; cursor: pointer; }
-  .card { border: 1px solid #ccc; border-radius: 8px; padding: 1.5rem; }
-  code { background: #f2f2f2; padding: 0 .25rem; border-radius: 4px; }
+  :root {
+    --bg: #f6f8fa; --card: #ffffff; --text: #0f172a; --muted: #57606a;
+    --border: #d8dee4; --field: #ffffff; --chip: #ecfdf5; --chip-text: #0f766e;
+    --primary: #0f766e; --primary-hover: #115e59; --primary-text: #ffffff;
+    --gh: #1f2328; --gh-hover: #32383f; --gh-text: #ffffff;
+    --ring: rgba(20, 184, 166, .35); --shadow: 0 1px 2px rgba(15,23,42,.04), 0 8px 24px rgba(15,23,42,.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117; --card: #161b22; --text: #e6edf3; --muted: #8d96a0;
+      --border: #30363d; --field: #0d1117; --chip: rgba(45,212,191,.12); --chip-text: #5eead4;
+      --primary: #14b8a6; --primary-hover: #2dd4bf; --primary-text: #04201d;
+      --gh: #f0f6fc; --gh-hover: #d1d9e0; --gh-text: #1f2328;
+      --ring: rgba(45, 212, 191, .4); --shadow: 0 8px 28px rgba(0,0,0,.45);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 2rem 1rem;
+    background: var(--bg); color: var(--text);
+    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { width: 100%; max-width: 25rem; }
+  .brand { display: flex; align-items: center; justify-content: center; gap: .6rem; margin-bottom: 1.25rem; }
+  .brand img { width: 36px; height: 36px; }
+  .brand span { font-size: 1.35rem; font-weight: 650; letter-spacing: -.02em; }
+  .brand b { color: var(--chip-text); font-weight: 650; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 1.75rem; box-shadow: var(--shadow); }
+  h1 { font-size: 1.15rem; margin: 0 0 .25rem; letter-spacing: -.01em; }
+  #status { color: var(--muted); margin: 0 0 1.25rem; overflow-wrap: anywhere; }
+  .client { display: flex; align-items: center; gap: .75rem; padding: .85rem 1rem; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 1rem; }
+  .client-icon { flex: none; width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; background: var(--chip); color: var(--chip-text); }
+  .client strong { display: block; font-size: 1rem; overflow-wrap: anywhere; }
+  .client small { color: var(--muted); }
+  .label { font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 .4rem; }
+  #scopes { display: inline-block; font: 500 .85rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--chip); color: var(--chip-text); padding: .3rem .6rem; border-radius: 999px; overflow-wrap: anywhere; }
+  .note { color: var(--muted); font-size: .85rem; margin: 1rem 0 1.25rem; }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+  button { font: inherit; font-weight: 600; cursor: pointer; border-radius: 9px; padding: .65rem 1rem; border: 1px solid transparent; transition: background .15s, border-color .15s; }
+  button:focus-visible, input:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring); }
+  .primary { background: var(--primary); color: var(--primary-text); }
+  .primary:hover { background: var(--primary-hover); }
+  .secondary { background: transparent; color: var(--text); border-color: var(--border); }
+  .secondary:hover { border-color: var(--muted); }
+  .github { width: 100%; display: flex; align-items: center; justify-content: center; gap: .6rem; background: var(--gh); color: var(--gh-text); padding: .75rem 1rem; }
+  .github:hover { background: var(--gh-hover); }
+  .github svg { width: 20px; height: 20px; fill: currentColor; }
+  .divider { display: flex; align-items: center; gap: .75rem; color: var(--muted); font-size: .8rem; margin: 1.25rem 0 1rem; }
+  .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  #email-hint { color: var(--muted); font-size: .9rem; margin: 0 0 .75rem; }
+  input { width: 100%; font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--border); border-radius: 9px; padding: .6rem .75rem; margin-bottom: .6rem; }
+  #do-signin { width: 100%; margin-top: .15rem; }
+  footer { text-align: center; color: var(--muted); font-size: .8rem; margin-top: 1.25rem; }
+  footer a { color: inherit; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-<div class="card">
-  <h1>Authorize</h1>
-  <p id="status">Loading…</p>
-  <div id="details" hidden>
-    <p><strong id="client"></strong> requests scopes: <code id="scopes"></code></p>
-    <button id="approve">Approve</button>
-    <button id="deny">Deny</button>
+<main>
+  <div class="brand"><img src="../../mark.svg" alt=""><span>tier<b>bound</b></span></div>
+  <div class="card">
+    <h1>Authorize access</h1>
+    <p id="status">Loading…</p>
+    <div id="details" hidden>
+      <div class="client">
+        <div class="client-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M2.5 2A1.5 1.5 0 0 0 1 3.5v7A1.5 1.5 0 0 0 2.5 12H6v1H4.75a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5H10v-1h3.5a1.5 1.5 0 0 0 1.5-1.5v-7A1.5 1.5 0 0 0 13.5 2h-11Zm0 1.5h11v7h-11v-7Z"/></svg>
+        </div>
+        <div><strong id="client"></strong><small>wants to act on your behalf</small></div>
+      </div>
+      <p class="label">Requested scopes</p>
+      <code id="scopes"></code>
+      <p class="note">This lets the client list and decide on your pending actions. Each action is still approved one by one, against its exact content hash.</p>
+      <div class="actions">
+        <button id="deny" class="secondary">Deny</button>
+        <button id="approve" class="primary">Approve</button>
+      </div>
+    </div>
+    <div id="signin" hidden>
+      <div id="github-row" hidden>
+        <button id="do-github" class="github">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+          Sign in with GitHub
+        </button>
+        <div class="divider">or use email</div>
+      </div>
+      <p id="email-hint">Sign in to continue (local: any dev account):</p>
+      <input id="email" type="email" placeholder="you@example.com" autocomplete="username" aria-label="Email">
+      <input id="password" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password">
+      <button id="do-signin" class="secondary">Sign in with email</button>
+    </div>
   </div>
-  <div id="signin" hidden>
-    <p id="github-row" hidden><button id="do-github">Sign in with GitHub</button><br><br>or with email (fallback):</p>
-    <p id="email-hint">Sign in to continue (local: any dev account):</p>
-    <input id="email" type="email" placeholder="email"><br><br>
-    <input id="password" type="password" placeholder="password"><br><br>
-    <button id="do-signin">Sign in</button>
-  </div>
-</div>
+  <footer>Approvals over MCP · <a href="https://github.com/MohamedBenTaher/tierbound">tierbound</a></footer>
+</main>
 <script type="module">
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // Publishable (public) keys only. Hosted Auth redirects to site_url in

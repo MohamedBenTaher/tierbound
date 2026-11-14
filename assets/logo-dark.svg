@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 272 64" role="img" aria-label="tierbound">
+  <title>tierbound</title>
+  <defs><linearGradient id="tb-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#14B8A6"/><stop offset="1" stop-color="#0F766E"/></linearGradient></defs>
+  <rect width="64" height="64" rx="15" fill="url(#tb-g)"/>
+  <rect x="14" y="13" width="5" height="38" rx="2.5" fill="#fff"/>
+  <rect x="45" y="13" width="5" height="38" rx="2.5" fill="#fff"/>
+  <rect x="22" y="40" width="20" height="6" rx="3" fill="#fff"/>
+  <rect x="22" y="30" width="20" height="6" rx="3" fill="#fff" fill-opacity=".78"/>
+  <rect x="22" y="20" width="20" height="6" rx="3" fill="#FCD34D"/>
+  <text x="80" y="43" fill="#F1F5F9" font-family="Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="34" font-weight="650" letter-spacing="-0.8">tier<tspan fill="#5EEAD4">bound</tspan></text>
+</svg>
