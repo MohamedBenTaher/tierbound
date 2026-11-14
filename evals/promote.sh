@@ -26,7 +26,8 @@ cd "$root"
 target=(--remote ${SUPABASE_YES:+--yes})
 [[ "${PROMOTE_TARGET:-remote}" == "local" ]] && target=()
 echo "promote: $name ($tier) -> $hash on ${PROMOTE_TARGET:-remote}"
-supabase db query "${target[@]}" "
+# ${target[@]+...}: bash 3.2 (macOS) treats an empty array as unbound under set -u.
+supabase db query ${target[@]+"${target[@]}"} "
 insert into public.agents (owner, name, tier, config_hash, evals_passed_hash)
 select owner, '$name', '$tier', '$hash', '$hash' from public.agents where name = 'triage-drafter' limit 1
 on conflict (owner, name) do update
