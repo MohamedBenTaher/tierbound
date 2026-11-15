@@ -145,6 +145,112 @@
       },
       "canonical": "{\"kind\":\"github_issue\",\"payload\":{\"body\":\"x\",\"labels\":[],\"title\":\"Café   \\\"quoted\\\" <b>\"},\"target\":{\"repo\":\"MohamedBenTaher/fable\"}}",
       "sha256": "aa8d1c5bc455d13e179fcb820f4269b01e9eb8147b7824fc949075752e2341a0"
+    },
+    {
+      "name": "pr review: comment with one finding and a status",
+      "kind": "github_pr_review",
+      "target": {
+        "repo": "MohamedBenTaher/tierbound",
+        "pr_number": 12,
+        "head_sha": "3f2a9c0b7d1e4f5a6b7c8d9e0f1a2b3c4d5e6f70"
+      },
+      "payload": {
+        "event": "COMMENT",
+        "body": "tierbound review: 1 finding.",
+        "comments": [
+          {
+            "path": "supabase/migrations/20261120000000_x.sql",
+            "line": 3,
+            "side": "RIGHT",
+            "body": "Grants the worker role a write on approvals."
+          }
+        ],
+        "status": {
+          "state": "success",
+          "context": "tierbound/review",
+          "description": "1 finding, advisory"
+        },
+        "findings": [
+          {
+            "path": "supabase/migrations/20261120000000_x.sql",
+            "line": 3,
+            "side": "RIGHT",
+            "severity": "blocker",
+            "rule": {
+              "source": "AGENTS.md",
+              "anchor": "invariants-1",
+              "quote": "The worker never holds write credentials or the GitHub App key."
+            },
+            "evidence": [],
+            "message": "Grants the worker role a write on approvals.",
+            "suggestion": "Drop the grant."
+          }
+        ]
+      },
+      "canonical": "{\"kind\":\"github_pr_review\",\"payload\":{\"body\":\"tierbound review: 1 finding.\",\"comments\":[{\"body\":\"Grants the worker role a write on approvals.\",\"line\":3,\"path\":\"supabase/migrations/20261120000000_x.sql\",\"side\":\"RIGHT\"}],\"event\":\"COMMENT\",\"findings\":[{\"evidence\":[],\"line\":3,\"message\":\"Grants the worker role a write on approvals.\",\"path\":\"supabase/migrations/20261120000000_x.sql\",\"rule\":{\"anchor\":\"invariants-1\",\"quote\":\"The worker never holds write credentials or the GitHub App key.\",\"source\":\"AGENTS.md\"},\"severity\":\"blocker\",\"side\":\"RIGHT\",\"suggestion\":\"Drop the grant.\"}],\"status\":{\"context\":\"tierbound/review\",\"description\":\"1 finding, advisory\",\"state\":\"success\"}},\"target\":{\"head_sha\":\"3f2a9c0b7d1e4f5a6b7c8d9e0f1a2b3c4d5e6f70\",\"pr_number\":12,\"repo\":\"MohamedBenTaher/tierbound\"}}",
+      "sha256": "30eb8cbc01243f0209686fd765e1dba6948fbb54ee20744878f64ec88f42d4ef"
+    },
+    {
+      "name": "pr review: same review, other head sha",
+      "kind": "github_pr_review",
+      "target": {
+        "repo": "MohamedBenTaher/tierbound",
+        "pr_number": 12,
+        "head_sha": "0000000000000000000000000000000000000000"
+      },
+      "payload": {
+        "event": "COMMENT",
+        "body": "tierbound review: 1 finding.",
+        "comments": [
+          {
+            "path": "supabase/migrations/20261120000000_x.sql",
+            "line": 3,
+            "side": "RIGHT",
+            "body": "Grants the worker role a write on approvals."
+          }
+        ],
+        "status": {
+          "state": "success",
+          "context": "tierbound/review",
+          "description": "1 finding, advisory"
+        },
+        "findings": [
+          {
+            "path": "supabase/migrations/20261120000000_x.sql",
+            "line": 3,
+            "side": "RIGHT",
+            "severity": "blocker",
+            "rule": {
+              "source": "AGENTS.md",
+              "anchor": "invariants-1",
+              "quote": "The worker never holds write credentials or the GitHub App key."
+            },
+            "evidence": [],
+            "message": "Grants the worker role a write on approvals.",
+            "suggestion": "Drop the grant."
+          }
+        ]
+      },
+      "canonical": "{\"kind\":\"github_pr_review\",\"payload\":{\"body\":\"tierbound review: 1 finding.\",\"comments\":[{\"body\":\"Grants the worker role a write on approvals.\",\"line\":3,\"path\":\"supabase/migrations/20261120000000_x.sql\",\"side\":\"RIGHT\"}],\"event\":\"COMMENT\",\"findings\":[{\"evidence\":[],\"line\":3,\"message\":\"Grants the worker role a write on approvals.\",\"path\":\"supabase/migrations/20261120000000_x.sql\",\"rule\":{\"anchor\":\"invariants-1\",\"quote\":\"The worker never holds write credentials or the GitHub App key.\",\"source\":\"AGENTS.md\"},\"severity\":\"blocker\",\"side\":\"RIGHT\",\"suggestion\":\"Drop the grant.\"}],\"status\":{\"context\":\"tierbound/review\",\"description\":\"1 finding, advisory\",\"state\":\"success\"}},\"target\":{\"head_sha\":\"0000000000000000000000000000000000000000\",\"pr_number\":12,\"repo\":\"MohamedBenTaher/tierbound\"}}",
+      "sha256": "57fbf35fdfe9b4902f64c3acdecffe126d9d76e1e5fc43ce880281c7460e0bf5"
+    },
+    {
+      "name": "pr review: no findings, null status",
+      "kind": "github_pr_review",
+      "target": {
+        "repo": "MohamedBenTaher/tierbound",
+        "pr_number": 13,
+        "head_sha": "3f2a9c0b7d1e4f5a6b7c8d9e0f1a2b3c4d5e6f70"
+      },
+      "payload": {
+        "event": "COMMENT",
+        "body": "tierbound review: no findings.",
+        "comments": [],
+        "status": null,
+        "findings": []
+      },
+      "canonical": "{\"kind\":\"github_pr_review\",\"payload\":{\"body\":\"tierbound review: no findings.\",\"comments\":[],\"event\":\"COMMENT\",\"findings\":[],\"status\":null},\"target\":{\"head_sha\":\"3f2a9c0b7d1e4f5a6b7c8d9e0f1a2b3c4d5e6f70\",\"pr_number\":13,\"repo\":\"MohamedBenTaher/tierbound\"}}",
+      "sha256": "5532e456c635c1133c530432fa7bbee07e6e42686602d5c675659ba2dee4115f"
     }
   ]
 }
