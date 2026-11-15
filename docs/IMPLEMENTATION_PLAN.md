@@ -816,7 +816,14 @@ Commit this as its own step: `docs(w4.0): AGENTS.md invariants for v2`.
 
 **Commit:** `feat(w4.6): worker proposes github_issue for issue-granted agents`
 
-: `review-pr` (non-blocking)
+### Phase 5 — Weekend 5: `review-pr` (non-blocking)
+
+**Status (2026-11-14).** Built: 5.3, 5.4, 5.5 and the 6.1 mechanism; deferred: 5.1 and 5.2. Notes against the steps below:
+- **5.3:** done as written, plus the provider interface (V2_ACTIONS §11; `provider` is its own config field). `review-policy` is the `[review]` table in `worker/config/review-pr.toml`. Rules come from `AGENTS.md` and the new `docs/review-rules.md`, read at `base_sha`. Anchors are heading-slug prefixes, with `-N` for the N-th numbered item. The grounding check refuses ten cases, and `runs.stats` records the dropped findings and why. The queue is `jobs_review`; the worker calls `tierbound_can_block()` but cannot read capabilities.
+- **5.4:** the handler lives in `effect-github-comment/review.ts`. The function keeps its v1 name so the hosted webhook URL does not move. There is no `effects.progress` column: on takeover, the marked review is found and only the status is reposted (statuses are idempotent). A moved head marks the action `stale` and writes nothing. The MCP preview shows the verdict line (naming the blocking rule), the findings with quoted rules, the comments as posted, and the head sha.
+- **5.5:** 21 golden PRs (13 seeded, 8 clean, one injection), the set-level scorer, and both gates in `evals/review-pr/rubric.json`. **No recording yet:** it needs `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY` with `provider = "openai"`). Until it is recorded, `review-pr` is not in `evals/gate.sh` `ALL_CONFIGS` and cannot be promoted.
+- **6.1 mechanism:** `agent_capabilities`, the insert trigger, `promote.sh` granting `block` only when `evalscore -block-gate` passes, and `TestReviewBlocksOnlyWithCapability`. It is inactive: no capability rows exist.
+- **Deferred:** 5.1 (evidence workflow; until then evidence is empty and any cited evidence id is dropped). 5.2 (ingest `pull_request` and `workflow_run`; needs the owner to subscribe the App's webhooks). Until 5.2 lands, review jobs are enqueued by hand on `jobs_review`.
 
 #### Step 5.1 — Evidence workflow
 

@@ -375,7 +375,9 @@ These rows join the README guarantees table **when each phase ships**, each with
 
 ## 11. Model providers
 
-The worker's `internal/llm` gains a provider interface; the agent config's `model` names the provider and model, e.g. `anthropic/<model>` or `openai/<model>`, so a model change is a `config_hash` change and re-runs the eval gate. Keys:
+The worker's `internal/llm` gains a provider interface (`llm.ForProvider`). The agent config names the provider in its own field, `provider = "groq" | "anthropic" | "openai"`, next to `model`, so a provider or model change is a `config_hash` change and re-runs the eval gate.
+
+**Deviation from the first draft (built in Phase 5):** the draft put the provider in the model name (`anthropic/<model>`). Groq's own model ids already contain a slash and a provider-looking prefix (`openai/gpt-oss-20b`, served by Groq), so a prefix scheme would misroute it. `provider` is hashed only when set, so the v1 configs (no `provider`, Groq by default) keep their hashes and recordings. Each provider reads only its own key; a missing key is an error naming the variable, never a fallback to another provider. Keys:
 
 | Key | Where it lives | Needed from |
 | --- | --- | --- |
