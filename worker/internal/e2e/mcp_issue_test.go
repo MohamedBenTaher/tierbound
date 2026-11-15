@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -86,5 +87,32 @@ func TestMCPPreviewsReview(t *testing.T) {
 		if !strings.Contains(got.Preview, want) {
 			t.Fatalf("preview lacks %q:\n%s", want, got.Preview)
 		}
+	}
+
+	// A blocking review names the rule that blocks (V2_ACTIONS 4.2 MCP).
+	payload["event"] = "REQUEST_CHANGES"
+	payload["status"] = map[string]any{"state": "failure", "context": "tierbound/review", "description": "blocking"}
+	target["head_sha"] = strings.Repeat("0", 40)
+	hash, _ = hashing.ActionHash("github_pr_review", target, payload)
+	// The insert trigger admits a blocking review only from an agent holding
+	// block for its config_hash, so seed one.
+	if err := h.db.QueryRow(context.Background(), `
+		with agent as (
+			insert into public.agents (owner, name, tier, config_hash, evals_passed_hash)
+			values ($1::uuid, 'e2e-' || gen_random_uuid(), 'draft', 'e2e', 'e2e') returning id),
+		cap as (
+			insert into public.agent_capabilities (agent_id, capability, granted_hash)
+			select id, 'block', 'e2e' from agent returning agent_id),
+		run as (
+			insert into public.runs (agent_id, attempt, status)
+			select agent_id, 1, 'succeeded' from cap returning id)
+		insert into public.proposed_actions (run_id, kind, target, payload, payload_hash, idempotency_key)
+		select run.id, 'github_pr_review', $2::jsonb, $3::jsonb, $4, 'e2e:' || gen_random_uuid()
+		from run returning id::text`, owner, mustJSON(t, target), mustJSON(t, payload), hash).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	r = h.callTool(t, token, "get_action", map[string]any{"action_id": id})
+	if want := "REQUEST_CHANGES · status failure (advisory) · blocking rule: AGENTS.md#invariants-1"; !strings.Contains(r.Text, want) {
+		t.Fatalf("blocking preview lacks %q: %s", want, r.Text)
 	}
 }

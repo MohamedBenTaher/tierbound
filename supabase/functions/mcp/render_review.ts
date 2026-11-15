@@ -12,10 +12,16 @@ function list(v: unknown): Obj[] {
   return Array.isArray(v) ? v.map(obj) : [];
 }
 
+function blockingRule(p: Obj): string {
+  const blocker = list(p.findings).find((f) => f.severity === "blocker");
+  const rule = obj(blocker?.rule);
+  return p.event === "REQUEST_CHANGES" && blocker ? ` · blocking rule: ${rule.source}#${rule.anchor}` : "";
+}
+
 function verdictLine(p: Obj): string {
   const status = obj(p.status);
   const statusText = p.status ? `status ${status.state} (advisory)` : "no status";
-  return `${p.event} · ${statusText}`;
+  return `${p.event} · ${statusText}${blockingRule(p)}`;
 }
 
 function findingRow(f: Obj): string {
