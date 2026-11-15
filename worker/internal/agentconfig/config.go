@@ -43,6 +43,10 @@ type Config struct {
 	Model      string   `toml:"model"`
 	PromptPath string   `toml:"prompt_path"`
 	ToolGrant  []string `toml:"tool_grant"`
+	// Provider: "groq" (default), "anthropic" or "openai" (V2_ACTIONS 11).
+	// Part of config_hash when set, so switching provider re-runs the gate;
+	// unset keeps the v1 hashes unchanged.
+	Provider string `toml:"provider"`
 	// Queue is the pgmq queue this agent's worker reads (default "jobs").
 	// Not part of config_hash: it routes jobs, it does not change behaviour.
 	Queue  string `toml:"queue"`
@@ -72,6 +76,9 @@ func Load(path string) (Config, error) {
 	if c.Queue != "" && !queueNameRE.MatchString(c.Queue) {
 		return Config{}, fmt.Errorf("agentconfig: %s: queue %q: want lowercase letters, digits, underscores", path, c.Queue)
 	}
+	if !slices.Contains([]string{"", "groq", "anthropic", "openai"}, c.Provider) {
+		return Config{}, fmt.Errorf("agentconfig: %s: provider %q: want groq, anthropic or openai", path, c.Provider)
+	}
 	if c.PromptPath == "" {
 		return Config{}, fmt.Errorf("agentconfig: %s: prompt_path is required", path)
 	}
@@ -90,12 +97,16 @@ func Load(path string) (Config, error) {
 func (c Config) Hash() (string, error) {
 	grant := slices.Clone(c.ToolGrant)
 	slices.Sort(grant)
-	return hashing.Canonical(map[string]any{
+	fields := map[string]any{
 		"prompt":     c.Prompt,
 		"model":      c.Model,
 		"tool_grant": grant,
 		"tier":       string(c.Tier),
-	})
+	}
+	if c.Provider != "" {
+		fields["provider"] = c.Provider
+	}
+	return hashing.Canonical(fields)
 }
 
 // QueueName is the pgmq queue to read: Queue, or DefaultQueue when unset.

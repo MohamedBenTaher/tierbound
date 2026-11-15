@@ -92,7 +92,7 @@ func run() error {
 	default:
 		p := evals.RecordingPath(*resultsDir, hash)
 		if err := readRecording(p, &rec); err != nil {
-			return fmt.Errorf("no usable recording for config_hash %s (%w); run `go run ./cmd/evalscore -record %s` with GROQ_API_KEY set and commit it", hash, err, golden)
+			return fmt.Errorf("no usable recording for config_hash %s (%w); run `go run ./cmd/evalscore -record %s` with the provider's API key set and commit it", hash, err, golden)
 		}
 		if rec.ConfigHash != hash {
 			return fmt.Errorf("%s records config_hash %s, want %s", p, rec.ConfigHash, hash)
@@ -109,11 +109,10 @@ func run() error {
 }
 
 func draftAll(cfg agentconfig.Config, hash string, set *evals.Set) (evals.Recording, error) {
-	key := os.Getenv("GROQ_API_KEY")
-	if key == "" {
-		return evals.Recording{}, errors.New("GROQ_API_KEY is not set")
+	client, err := llm.ForProvider(cfg.Provider, cfg.Model, os.Getenv)
+	if err != nil {
+		return evals.Recording{}, err
 	}
-	client := llm.New(key, cfg.Model, os.Getenv("GROQ_API_URL"))
 	rec := evals.Recording{
 		ConfigHash: hash,
 		Model:      cfg.Model,
@@ -133,7 +132,7 @@ func draftAll(cfg agentconfig.Config, hash string, set *evals.Set) (evals.Record
 // draftWithBackoff retries rate-limited (HTTP 429) calls a few times: a
 // golden set is a burst of requests, and free model tiers cap tokens per
 // minute. Any other error returns at once.
-func draftWithBackoff(client *llm.Client, prompt, msg string) (string, error) {
+func draftWithBackoff(client llm.Completer, prompt, msg string) (string, error) {
 	for attempt := 1; ; attempt++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		out, err := client.DraftComment(ctx, prompt, msg)

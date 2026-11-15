@@ -58,11 +58,16 @@ func main() {
 	}
 	defer pool.Close()
 
+	drafter, err := llm.ForProvider(cfg.Provider, cfg.Model, os.Getenv)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "worker:", err)
+		os.Exit(1)
+	}
 	deps := propose.Deps{
 		Pool:    pool,
 		Queue:   pgmq.New(pool),
 		Fetcher: githubro.New(os.Getenv("GITHUB_READ_TOKEN"), os.Getenv("GITHUB_API_URL")),
-		Drafter: llm.New(os.Getenv("GROQ_API_KEY"), cfg.Model, os.Getenv("GROQ_API_URL")),
+		Drafter: drafter,
 		Config:  cfg,
 		Log:     func(line string) { log.Print(line) },
 	}

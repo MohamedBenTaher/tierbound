@@ -90,3 +90,23 @@ func TestLoadRejectsMissingPrompt(t *testing.T) {
 		t.Fatal("missing prompt file was accepted")
 	}
 }
+
+// V2_ACTIONS 11: provider joins the hash only when set, so v1 hashes hold
+// and switching provider changes the hash (and so re-runs the gate).
+func TestProviderHashedOnlyWhenSet(t *testing.T) {
+	base := Config{Prompt: "p", Model: "m", ToolGrant: []string{"github.propose_comment"}, Tier: "draft"}
+	h0, _ := base.Hash()
+	groq := base
+	groq.Provider = "groq"
+	anth := base
+	anth.Provider = "anthropic"
+	h1, _ := groq.Hash()
+	h2, _ := anth.Hash()
+	if h0 == h1 || h1 == h2 || h0 == h2 {
+		t.Fatalf("hashes: unset %s groq %s anthropic %s; want all distinct", h0, h1, h2)
+	}
+	unset, _ := Config{Prompt: "p", Model: "m", ToolGrant: []string{"github.propose_comment"}, Tier: "draft"}.Hash()
+	if unset != h0 {
+		t.Fatal("unset provider hash unstable")
+	}
+}
