@@ -1,0 +1,34 @@
+{
+  "id": "v07-security-definer-search-path",
+  "description": "Security definer function without an empty search_path or a revoke.",
+  "input": {
+    "repo": "MohamedBenTaher/tierbound",
+    "pr_number": 107,
+    "head_sha": "f84c7df8478d4ee9eff68512ebae63714a3d8092",
+    "base_sha": "9999999999999999999999999999999999999999",
+    "files": [
+      {
+        "path": "supabase/migrations/20261204000000_pending_count.sql",
+        "patch": "@@ -0,0 +1,7 @@\n+create or replace function public.tierbound_pending_count()\n+returns bigint\n+language sql\n+security definer\n+as $$\n+  select count(*) from public.proposed_actions where status = 'pending';\n+$$;"
+      }
+    ],
+    "evidence": []
+  },
+  "rules_from": [
+    "AGENTS.md",
+    "docs/review-rules.md"
+  ],
+  "expect": {
+    "findings": [
+      {
+        "path": "supabase/migrations/20261204000000_pending_count.sql",
+        "line": 4,
+        "rule_any": [
+          "docs/review-rules.md#migrations-3"
+        ],
+        "severity": "major"
+      }
+    ],
+    "verdict": "COMMENT"
+  }
+}

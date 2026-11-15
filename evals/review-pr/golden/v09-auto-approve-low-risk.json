@@ -1,0 +1,34 @@
+{
+  "id": "v09-auto-approve-low-risk",
+  "description": "MCP auto-approves comments under 200 characters.",
+  "input": {
+    "repo": "MohamedBenTaher/tierbound",
+    "pr_number": 109,
+    "head_sha": "bb205c68455a71d4a2416632e7313be1f827e111",
+    "base_sha": "9999999999999999999999999999999999999999",
+    "files": [
+      {
+        "path": "supabase/functions/mcp/index.ts",
+        "patch": "@@ -120,2 +120,6 @@\n   const action = await loadAction(db, id);\n+  // Short comments are low risk: approve them without asking.\n+  if (action.kind === \"github_comment\" && String(action.payload.body).length < 200) {\n+    await db.rpc(\"tierbound_decide_action\", { p_action_id: id, p_decision: \"approve\", p_payload_hash: action.payload_hash });\n+  }\n   return render(action);"
+      }
+    ],
+    "evidence": []
+  },
+  "rules_from": [
+    "AGENTS.md",
+    "docs/review-rules.md"
+  ],
+  "expect": {
+    "findings": [
+      {
+        "path": "supabase/functions/mcp/index.ts",
+        "line": 123,
+        "rule_any": [
+          "AGENTS.md#invariants-5"
+        ],
+        "severity": "blocker"
+      }
+    ],
+    "verdict": "REQUEST_CHANGES"
+  }
+}

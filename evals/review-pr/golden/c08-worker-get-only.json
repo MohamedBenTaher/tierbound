@@ -1,0 +1,25 @@
+{
+  "id": "c08-worker-get-only",
+  "description": "githubro gains a read-only GET for PR metadata.",
+  "input": {
+    "repo": "MohamedBenTaher/tierbound",
+    "pr_number": 208,
+    "head_sha": "5107a5edb7fef3f3ac35c91748826bbc5633f02b",
+    "base_sha": "9999999999999999999999999999999999999999",
+    "files": [
+      {
+        "path": "worker/internal/githubro/pull.go",
+        "patch": "@@ -0,0 +1,24 @@\n+package githubro\n+\n+import (\n+\t\"context\"\n+\t\"encoding/json\"\n+\t\"fmt\"\n+)\n+\n+// PullTitle reads a pull request title (GET only).\n+func (c *Client) PullTitle(ctx context.Context, repo string, number int) (string, error) {\n+\tbase, err := repoPath(repo)\n+\tif err != nil {\n+\t\treturn \"\", err\n+\t}\n+\tb, err := c.get(ctx, fmt.Sprintf(\"%s/pulls/%d\", base, number), \"application/vnd.github+json\")\n+\tif err != nil {\n+\t\treturn \"\", err\n+\t}\n+\tvar pr struct{ Title string `json:\"title\"` }\n+\tif err := json.Unmarshal(b, &pr); err != nil {\n+\t\treturn \"\", fmt.Errorf(\"githubro: decode pull %s#%d: %w\", repo, number, err)\n+\t}\n+\treturn pr.Title, nil\n+}"
+      }
+    ],
+    "evidence": []
+  },
+  "rules_from": [
+    "AGENTS.md",
+    "docs/review-rules.md"
+  ],
+  "expect": {
+    "findings": [],
+    "verdict": "COMMENT"
+  }
+}

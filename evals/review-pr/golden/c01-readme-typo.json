@@ -1,0 +1,25 @@
+{
+  "id": "c01-readme-typo",
+  "description": "Docs-only typo fix.",
+  "input": {
+    "repo": "MohamedBenTaher/tierbound",
+    "pr_number": 201,
+    "head_sha": "893707e773bb496d5db87f2700322b3bb3d41e10",
+    "base_sha": "9999999999999999999999999999999999999999",
+    "files": [
+      {
+        "path": "README.md",
+        "patch": "@@ -12,3 +12,3 @@\n tierbound separates deciding from doing.\n-A human aproves the exact payload hash.\n+A human approves the exact payload hash.\n "
+      }
+    ],
+    "evidence": []
+  },
+  "rules_from": [
+    "AGENTS.md",
+    "docs/review-rules.md"
+  ],
+  "expect": {
+    "findings": [],
+    "verdict": "COMMENT"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "id": "v04-handler-without-marker",
+  "description": "New effector handler posts without looking for its marker first.",
+  "input": {
+    "repo": "MohamedBenTaher/tierbound",
+    "pr_number": 104,
+    "head_sha": "f3779e7f360052d54075a504f878d795de94757e",
+    "base_sha": "9999999999999999999999999999999999999999",
+    "files": [
+      {
+        "path": "supabase/functions/effect-github-comment/kinds.ts",
+        "patch": "@@ -40,4 +40,9 @@\n export const HANDLERS: Record<string, Handler> = {\n   github_comment: commentHandler,\n   github_issue: issueHandler,\n+  github_reaction: {\n+    validate: validateReaction,\n+    findExisting: async () => null,\n+    post: (gh: GitHubApp, t, p) => gh.addReaction(t.repo, t.issue_number, p.content),\n+  },\n };"
+      }
+    ],
+    "evidence": []
+  },
+  "rules_from": [
+    "AGENTS.md",
+    "docs/review-rules.md"
+  ],
+  "expect": {
+    "findings": [
+      {
+        "path": "supabase/functions/effect-github-comment/kinds.ts",
+        "line": 45,
+        "rule_any": [
+          "AGENTS.md#invariants-3",
+          "docs/review-rules.md#edge-functions-1"
+        ],
+        "severity": "blocker"
+      }
+    ],
+    "verdict": "REQUEST_CHANGES"
+  }
+}

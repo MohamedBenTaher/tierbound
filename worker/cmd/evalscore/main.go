@@ -5,6 +5,11 @@
 //	go run ./cmd/evalscore -record  ../evals/golden   # draft with the model, write the recording, score
 //	go run ./cmd/evalscore -live    ../evals/golden   # draft with the model, score, write nothing
 //	go run ./cmd/evalscore          ../evals/golden   # replay the recording for this config_hash (CI)
+//	go run ./cmd/evalscore -block-gate -config config/review-pr.toml ../evals/review-pr/golden
+//	                                                  # replay; pass only if the stricter block bar is met
+//
+// A rubric with "scorer": "review" selects the set-level review scorer
+// (precision, recall, grounding, false blocks); the others score per fixture.
 //
 // Replay is deterministic and needs no API key: the recording for the
 // config's exact config_hash must exist and score as passing. Any config
@@ -27,7 +32,6 @@ import (
 	"github.com/MohamedBenTaher/tierbound/worker/internal/agentconfig"
 	"github.com/MohamedBenTaher/tierbound/worker/internal/evals"
 	"github.com/MohamedBenTaher/tierbound/worker/internal/llm"
-	"github.com/MohamedBenTaher/tierbound/worker/internal/propose"
 )
 
 func main() {
@@ -41,6 +45,7 @@ func run() error {
 	dryRun := flag.Bool("dry-run", false, "load and validate fixtures only")
 	record := flag.Bool("record", false, "draft with the model and write the recording for this config_hash")
 	live := flag.Bool("live", false, "draft with the model and score without writing anything")
+	blockGate := flag.Bool("block-gate", false, "review sets: pass only if the block gate (stricter) passes too")
 	configPath := flag.String("config", "config/triage-drafter.toml", "agent config TOML")
 	rubricPath := flag.String("rubric", "", "rubric JSON (default: <golden>/../rubric.json)")
 	resultsDir := flag.String("results", "", "recordings dir (default: <golden>/../results)")
@@ -56,13 +61,12 @@ func run() error {
 		*resultsDir = filepath.Join(golden, "..", "results")
 	}
 
-	set, err := evals.Load(golden, *rubricPath)
+	set, err := loadGolden(golden, *rubricPath)
 	if err != nil {
 		return err
 	}
 	if *dryRun {
-		fmt.Printf("loaded %d fixtures, threshold %.2f, %d global must-not rules\n",
-			len(set.Fixtures), set.Rubric.Threshold, len(set.Rubric.MustNotSay))
+		fmt.Println(set.summary())
 		return nil
 	}
 
@@ -92,23 +96,28 @@ func run() error {
 	default:
 		p := evals.RecordingPath(*resultsDir, hash)
 		if err := readRecording(p, &rec); err != nil {
-			return fmt.Errorf("no usable recording for config_hash %s (%w); run `go run ./cmd/evalscore -record %s` with the provider's API key set and commit it", hash, err, golden)
+			return fmt.Errorf("no usable recording for config_hash %s (%w); run `go run ./cmd/evalscore -record -config %s %s` with the provider's API key set and commit it", hash, err, *configPath, golden)
 		}
 		if rec.ConfigHash != hash {
 			return fmt.Errorf("%s records config_hash %s, want %s", p, rec.ConfigHash, hash)
 		}
 	}
 
-	rep := set.Score(rec.Outputs)
-	printReport(rep)
-	if !rep.Pass {
+	g := set.grade(rec.Outputs, cfg)
+	if !g.propose {
 		return fmt.Errorf("eval gate FAILED for config_hash %s", hash)
 	}
 	fmt.Printf("eval gate passed for config_hash %s\n", hash)
+	if *blockGate && !g.block {
+		return fmt.Errorf("block gate not met for config_hash %s (blocking stays off)", hash)
+	}
+	if *blockGate {
+		fmt.Printf("block gate passed for config_hash %s\n", hash)
+	}
 	return nil
 }
 
-func draftAll(cfg agentconfig.Config, hash string, set *evals.Set) (evals.Recording, error) {
+func draftAll(cfg agentconfig.Config, hash string, set golden) (evals.Recording, error) {
 	client, err := llm.ForProvider(cfg.Provider, cfg.Model, os.Getenv)
 	if err != nil {
 		return evals.Recording{}, err
@@ -119,12 +128,12 @@ func draftAll(cfg agentconfig.Config, hash string, set *evals.Set) (evals.Record
 		RecordedAt: time.Now().UTC().Format(time.RFC3339),
 		Outputs:    map[string]string{},
 	}
-	for _, f := range set.Fixtures {
-		out, err := draftWithBackoff(client, cfg.Prompt, propose.FormIssueMessage(f.Issue.GitHub()))
+	for _, pr := range set.prompts() {
+		out, err := draftWithBackoff(client, cfg.Prompt, pr.message)
 		if err != nil {
-			return evals.Recording{}, fmt.Errorf("fixture %s: %w", f.ID, err)
+			return evals.Recording{}, fmt.Errorf("fixture %s: %w", pr.id, err)
 		}
-		rec.Outputs[f.ID] = out
+		rec.Outputs[pr.id] = out
 	}
 	return rec, nil
 }

@@ -1,0 +1,34 @@
+{
+  "id": "v05-queue-without-grants",
+  "description": "Migration creates a queue but grants the worker nothing on it.",
+  "input": {
+    "repo": "MohamedBenTaher/tierbound",
+    "pr_number": 105,
+    "head_sha": "7c26af8bcc7207711ca467f5c78055131b568999",
+    "base_sha": "9999999999999999999999999999999999999999",
+    "files": [
+      {
+        "path": "supabase/migrations/20261202000000_jobs_report_queue.sql",
+        "patch": "@@ -0,0 +1,2 @@\n+-- Queue for the report agent.\n+select pgmq.create('jobs_report');"
+      }
+    ],
+    "evidence": []
+  },
+  "rules_from": [
+    "AGENTS.md",
+    "docs/review-rules.md"
+  ],
+  "expect": {
+    "findings": [
+      {
+        "path": "supabase/migrations/20261202000000_jobs_report_queue.sql",
+        "line": 2,
+        "rule_any": [
+          "docs/review-rules.md#migrations-1"
+        ],
+        "severity": "major"
+      }
+    ],
+    "verdict": "COMMENT"
+  }
+}

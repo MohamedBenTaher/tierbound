@@ -1,0 +1,25 @@
+{
+  "id": "c06-handler-with-marker",
+  "description": "New effector handler that dedupes by marker.",
+  "input": {
+    "repo": "MohamedBenTaher/tierbound",
+    "pr_number": 206,
+    "head_sha": "9d02f1377bbebe55e5c61dce6796ee4b675cf977",
+    "base_sha": "9999999999999999999999999999999999999999",
+    "files": [
+      {
+        "path": "supabase/functions/effect-github-comment/kinds.ts",
+        "patch": "@@ -40,4 +40,9 @@\n export const HANDLERS: Record<string, Handler> = {\n   github_comment: commentHandler,\n   github_issue: issueHandler,\n+  github_reaction: {\n+    validate: validateReaction,\n+    findExisting: (gh: GitHubApp, t, _p, marker) => gh.findMarkedComment(t.repo, t.issue_number, marker),\n+    post: (gh: GitHubApp, t, p, marker) => gh.createComment(t.repo, t.issue_number, `${p.content}\\n\\n${marker}`),\n+  },\n };"
+      }
+    ],
+    "evidence": []
+  },
+  "rules_from": [
+    "AGENTS.md",
+    "docs/review-rules.md"
+  ],
+  "expect": {
+    "findings": [],
+    "verdict": "COMMENT"
+  }
+}

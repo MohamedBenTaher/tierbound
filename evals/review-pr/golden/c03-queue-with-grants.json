@@ -1,0 +1,25 @@
+{
+  "id": "c03-queue-with-grants",
+  "description": "Queue migration that grants the worker in the same migration.",
+  "input": {
+    "repo": "MohamedBenTaher/tierbound",
+    "pr_number": 203,
+    "head_sha": "1dfadf54bd6aacdd557917abbd60319fb4262582",
+    "base_sha": "9999999999999999999999999999999999999999",
+    "files": [
+      {
+        "path": "supabase/migrations/20261206000000_jobs_report_queue.sql",
+        "patch": "@@ -0,0 +1,4 @@\n+-- Queue for the report agent; grants in the same migration.\n+select pgmq.create('jobs_report');\n+grant select, update, delete on pgmq.q_jobs_report to tierbound_worker;\n+grant select, insert on pgmq.a_jobs_report to tierbound_worker;"
+      }
+    ],
+    "evidence": []
+  },
+  "rules_from": [
+    "AGENTS.md",
+    "docs/review-rules.md"
+  ],
+  "expect": {
+    "findings": [],
+    "verdict": "COMMENT"
+  }
+}

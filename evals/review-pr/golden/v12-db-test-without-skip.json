@@ -1,0 +1,34 @@
+{
+  "id": "v12-db-test-without-skip",
+  "description": "Integration test fails instead of skipping without a database.",
+  "input": {
+    "repo": "MohamedBenTaher/tierbound",
+    "pr_number": 112,
+    "head_sha": "b957cc71af35326e0a379c37ff914eb72138d2e5",
+    "base_sha": "9999999999999999999999999999999999999999",
+    "files": [
+      {
+        "path": "worker/internal/propose/stats_test.go",
+        "patch": "@@ -0,0 +1,20 @@\n+package propose\n+\n+import (\n+\t\"context\"\n+\t\"os\"\n+\t\"testing\"\n+\n+\t\"github.com/jackc/pgx/v5/pgxpool\"\n+)\n+\n+func TestRunStatsColumn(t *testing.T) {\n+\tpool, err := pgxpool.New(context.Background(), os.Getenv(\"TEST_DATABASE_URL\"))\n+\tif err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tdefer pool.Close()\n+\tif _, err := pool.Exec(context.Background(), `select stats from public.runs limit 1`); err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+}"
+      }
+    ],
+    "evidence": []
+  },
+  "rules_from": [
+    "AGENTS.md",
+    "docs/review-rules.md"
+  ],
+  "expect": {
+    "findings": [
+      {
+        "path": "worker/internal/propose/stats_test.go",
+        "line": 12,
+        "rule_any": [
+          "docs/review-rules.md#tests-1"
+        ],
+        "severity": "minor"
+      }
+    ],
+    "verdict": "COMMENT"
+  }
+}

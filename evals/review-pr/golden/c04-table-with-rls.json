@@ -1,0 +1,25 @@
+{
+  "id": "c04-table-with-rls",
+  "description": "New table with RLS and an owner policy.",
+  "input": {
+    "repo": "MohamedBenTaher/tierbound",
+    "pr_number": 204,
+    "head_sha": "d2640b828ae744d947738430203ddaf3483ab310",
+    "base_sha": "9999999999999999999999999999999999999999",
+    "files": [
+      {
+        "path": "supabase/migrations/20261207000000_review_notes.sql",
+        "patch": "@@ -0,0 +1,8 @@\n+create table public.review_notes (\n+  id uuid primary key default gen_random_uuid(),\n+  owner uuid not null references auth.users (id),\n+  note text not null\n+);\n+alter table public.review_notes enable row level security;\n+create policy review_notes_owner on public.review_notes\n+  for select to authenticated using (owner = (select auth.uid()));"
+      }
+    ],
+    "evidence": []
+  },
+  "rules_from": [
+    "AGENTS.md",
+    "docs/review-rules.md"
+  ],
+  "expect": {
+    "findings": [],
+    "verdict": "COMMENT"
+  }
+}

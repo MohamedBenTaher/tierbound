@@ -9,10 +9,17 @@
 # Golden sets: triage-drafter -> evals/golden (the v1 layout); any other
 # agent <name> -> evals/<name>/golden, with rubric.json and results/ beside it.
 #
-# Optional live check: with EVAL_LIVE=1 and GROQ_API_KEY set, also drafts the
-# golden set with the model right now and scores that (catches a recording
-# that no longer matches what the model does). Off by default: it costs API
-# calls and model output is not deterministic.
+# review-pr (evals/review-pr) is not in ALL_CONFIGS yet: it has no recording
+# until someone with ANTHROPIC_API_KEY (or OPENAI_API_KEY, provider "openai")
+# runs `go run ./cmd/evalscore -record -config config/review-pr.toml
+# ../evals/review-pr/golden`. Until then `AGENT_CONFIG=config/review-pr.toml
+# evals/gate.sh` fails with "no usable recording", which also keeps the agent
+# from being promoted. Add it here in the commit that adds its recording.
+#
+# Optional live check: with EVAL_LIVE=1 and the config's provider key set,
+# also drafts the golden set with the model right now and scores that
+# (catches a recording that no longer matches what the model does). Off by
+# default: it costs API calls and model output is not deterministic.
 set -euo pipefail
 cd "$(dirname "$0")/../worker"
 
@@ -32,10 +39,7 @@ for config in "${configs[@]}"; do
   echo "== eval gate: $config ($golden)"
   go run ./cmd/evalscore -config "$config" "$golden"
   if [[ "${EVAL_LIVE:-0}" == "1" ]]; then
-    if [[ -z "${GROQ_API_KEY:-}" ]]; then
-      echo "eval gate: EVAL_LIVE=1 but GROQ_API_KEY is not set" >&2
-      exit 1
-    fi
+    # evalscore refuses with the missing key's name (no provider fallback).
     go run ./cmd/evalscore -live -config "$config" "$golden"
   fi
 done

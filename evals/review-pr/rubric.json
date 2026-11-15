@@ -1,0 +1,6 @@
+{
+  "scorer": "review",
+  "line_tolerance": 3,
+  "propose": {"precision": 0.70, "recall": 0.50, "grounding": 0.90},
+  "block": {"blocker_precision": 0.90, "blocker_recall": 0.60, "max_false_blocks": 0}
+}

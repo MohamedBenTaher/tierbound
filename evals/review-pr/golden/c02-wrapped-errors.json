@@ -1,0 +1,25 @@
+{
+  "id": "c02-wrapped-errors",
+  "description": "Go refactor that wraps errors with context.",
+  "input": {
+    "repo": "MohamedBenTaher/tierbound",
+    "pr_number": 202,
+    "head_sha": "7dd8da6969bbe13ef76340824ee271bf0481a2f2",
+    "base_sha": "9999999999999999999999999999999999999999",
+    "files": [
+      {
+        "path": "worker/internal/propose/propose.go",
+        "patch": "@@ -270,5 +270,8 @@\n \t_, err := pool.Exec(ctx, `\n \t\tupdate public.runs set status = $2, error = $3, finished_at = now()\n \t\twhere id = $1::uuid`, runID, status, errText)\n-\treturn err\n+\tif err != nil {\n+\t\treturn fmt.Errorf(\"finish run %s: %w\", runID, err)\n+\t}\n+\treturn nil\n }"
+      }
+    ],
+    "evidence": []
+  },
+  "rules_from": [
+    "AGENTS.md",
+    "docs/review-rules.md"
+  ],
+  "expect": {
+    "findings": [],
+    "verdict": "COMMENT"
+  }
+}

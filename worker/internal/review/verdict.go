@@ -31,7 +31,7 @@ type Verdict struct {
 // the eval clears the stricter bar).
 func Decide(kept []Finding, p Policy, canBlock bool) Verdict {
 	v := Verdict{Event: "COMMENT", State: "success"}
-	if canBlock && slices.ContainsFunc(kept, p.blocks) {
+	if canBlock && slices.ContainsFunc(kept, p.Blocks) {
 		v = Verdict{Event: "REQUEST_CHANGES", State: "failure"}
 	}
 	if !p.Status {
@@ -40,7 +40,9 @@ func Decide(kept []Finding, p Policy, canBlock bool) Verdict {
 	return v
 }
 
-func (p Policy) blocks(f Finding) bool {
+// Blocks reports whether a grounded finding may request changes under this
+// policy: severity blocker and a blocking rule.
+func (p Policy) Blocks(f Finding) bool {
 	return f.Severity == "blocker" && slices.Contains(p.BlockingRules, f.Rule.Key())
 }
 

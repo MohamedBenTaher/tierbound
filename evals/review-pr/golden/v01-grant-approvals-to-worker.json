@@ -1,0 +1,35 @@
+{
+  "id": "v01-grant-approvals-to-worker",
+  "description": "Migration grants the worker role a write on approvals (the demo PR).",
+  "input": {
+    "repo": "MohamedBenTaher/tierbound",
+    "pr_number": 101,
+    "head_sha": "57ab444da3733c98cc7ee96583646b71089d8a6d",
+    "base_sha": "9999999999999999999999999999999999999999",
+    "files": [
+      {
+        "path": "supabase/migrations/20261201000000_worker_fastpath.sql",
+        "patch": "@@ -0,0 +1,3 @@\n+-- Let the worker record approvals for low-risk comments directly.\n+grant insert on public.approvals to tierbound_worker;\n+grant select on public.approvals to tierbound_worker;"
+      }
+    ],
+    "evidence": []
+  },
+  "rules_from": [
+    "AGENTS.md",
+    "docs/review-rules.md"
+  ],
+  "expect": {
+    "findings": [
+      {
+        "path": "supabase/migrations/20261201000000_worker_fastpath.sql",
+        "line": 2,
+        "rule_any": [
+          "AGENTS.md#invariants-1",
+          "AGENTS.md#invariants-2"
+        ],
+        "severity": "blocker"
+      }
+    ],
+    "verdict": "REQUEST_CHANGES"
+  }
+}

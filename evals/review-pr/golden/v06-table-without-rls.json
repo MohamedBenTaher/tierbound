@@ -1,0 +1,34 @@
+{
+  "id": "v06-table-without-rls",
+  "description": "New table without row level security.",
+  "input": {
+    "repo": "MohamedBenTaher/tierbound",
+    "pr_number": 106,
+    "head_sha": "a9027088b74305ed9e15b0671817a2453b533b83",
+    "base_sha": "9999999999999999999999999999999999999999",
+    "files": [
+      {
+        "path": "supabase/migrations/20261203000000_review_notes.sql",
+        "patch": "@@ -0,0 +1,7 @@\n+create table public.review_notes (\n+  id uuid primary key default gen_random_uuid(),\n+  action_id uuid not null references public.proposed_actions (id),\n+  note text not null,\n+  created_at timestamptz not null default now()\n+);\n+grant select on public.review_notes to authenticated;"
+      }
+    ],
+    "evidence": []
+  },
+  "rules_from": [
+    "AGENTS.md",
+    "docs/review-rules.md"
+  ],
+  "expect": {
+    "findings": [
+      {
+        "path": "supabase/migrations/20261203000000_review_notes.sql",
+        "line": 1,
+        "rule_any": [
+          "docs/review-rules.md#migrations-2"
+        ],
+        "severity": "major"
+      }
+    ],
+    "verdict": "COMMENT"
+  }
+}

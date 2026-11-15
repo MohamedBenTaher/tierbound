@@ -1,0 +1,35 @@
+{
+  "id": "v03-worker-posts-to-github",
+  "description": "Worker gains a POST to GitHub (labels an issue directly).",
+  "input": {
+    "repo": "MohamedBenTaher/tierbound",
+    "pr_number": 103,
+    "head_sha": "f845a6e464d3f1c793c3ee26e8900ef6f1649ccf",
+    "base_sha": "9999999999999999999999999999999999999999",
+    "files": [
+      {
+        "path": "worker/internal/githubro/labels.go",
+        "patch": "@@ -0,0 +1,21 @@\n+package githubro\n+\n+import (\n+\t\"context\"\n+\t\"fmt\"\n+\t\"net/http\"\n+\t\"strings\"\n+)\n+\n+// AddLabel labels an issue so triage is visible without an approval round trip.\n+func (c *Client) AddLabel(ctx context.Context, repo string, number int, label string) error {\n+\tbody := strings.NewReader(fmt.Sprintf(`{\"labels\":[%q]}`, label))\n+\treq, err := http.NewRequestWithContext(ctx, http.MethodPost,\n+\t\tfmt.Sprintf(\"%s/repos/%s/issues/%d/labels\", c.baseURL, repo, number), body)\n+\tif err != nil {\n+\t\treturn fmt.Errorf(\"githubro: %w\", err)\n+\t}\n+\treq.Header.Set(\"Authorization\", \"Bearer \"+c.token)\n+\t_, err = c.http.Do(req)\n+\treturn err\n+}"
+      }
+    ],
+    "evidence": []
+  },
+  "rules_from": [
+    "AGENTS.md",
+    "docs/review-rules.md"
+  ],
+  "expect": {
+    "findings": [
+      {
+        "path": "worker/internal/githubro/labels.go",
+        "line": 13,
+        "rule_any": [
+          "AGENTS.md#invariants-1",
+          "docs/review-rules.md#go-2"
+        ],
+        "severity": "blocker"
+      }
+    ],
+    "verdict": "REQUEST_CHANGES"
+  }
+}

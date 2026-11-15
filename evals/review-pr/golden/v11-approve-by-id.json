@@ -1,0 +1,34 @@
+{
+  "id": "v11-approve-by-id",
+  "description": "Decide function stops comparing the payload hash.",
+  "input": {
+    "repo": "MohamedBenTaher/tierbound",
+    "pr_number": 111,
+    "head_sha": "76af14b9709330fb13bacd270927ebba0c086f84",
+    "base_sha": "9999999999999999999999999999999999999999",
+    "files": [
+      {
+        "path": "supabase/migrations/20261205000000_decide_simplify.sql",
+        "patch": "@@ -0,0 +1,9 @@\n+create or replace function public.tierbound_decide_action(p_action_id uuid, p_decision text, p_payload_hash text)\n+returns void language plpgsql security definer set search_path = '' as $$\n+begin\n+  -- The id identifies the action; the hash check was redundant.\n+  update public.proposed_actions set status = p_decision::public.action_status\n+  where id = p_action_id and status = 'pending';\n+end;\n+$$;\n+revoke all on function public.tierbound_decide_action(uuid, text, text) from public;"
+      }
+    ],
+    "evidence": []
+  },
+  "rules_from": [
+    "AGENTS.md",
+    "docs/review-rules.md"
+  ],
+  "expect": {
+    "findings": [
+      {
+        "path": "supabase/migrations/20261205000000_decide_simplify.sql",
+        "line": 6,
+        "rule_any": [
+          "AGENTS.md#invariants-2"
+        ],
+        "severity": "blocker"
+      }
+    ],
+    "verdict": "REQUEST_CHANGES"
+  }
+}

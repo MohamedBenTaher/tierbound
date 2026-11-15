@@ -1,0 +1,25 @@
+{
+  "id": "c05-db-test-with-skip",
+  "description": "Integration test that skips without TEST_DATABASE_URL.",
+  "input": {
+    "repo": "MohamedBenTaher/tierbound",
+    "pr_number": 205,
+    "head_sha": "d724846d6321f2d3915decead467e66df765118d",
+    "base_sha": "9999999999999999999999999999999999999999",
+    "files": [
+      {
+        "path": "worker/internal/propose/stats_test.go",
+        "patch": "@@ -0,0 +1,21 @@\n+package propose\n+\n+import (\n+\t\"context\"\n+\t\"os\"\n+\t\"testing\"\n+\n+\t\"github.com/jackc/pgx/v5/pgxpool\"\n+)\n+\n+func TestRunStatsColumn(t *testing.T) {\n+\turl := os.Getenv(\"TEST_DATABASE_URL\")\n+\tif url == \"\" {\n+\t\tt.Skip(\"TEST_DATABASE_URL not set\")\n+\t}\n+\tpool, err := pgxpool.New(context.Background(), url)\n+\tif err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tdefer pool.Close()\n+}"
+      }
+    ],
+    "evidence": []
+  },
+  "rules_from": [
+    "AGENTS.md",
+    "docs/review-rules.md"
+  ],
+  "expect": {
+    "findings": [],
+    "verdict": "COMMENT"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "v08-discarded-error",
+  "description": "Worker discards the error from a ledger update.",
+  "input": {
+    "repo": "MohamedBenTaher/tierbound",
+    "pr_number": 108,
+    "head_sha": "269dd40c16ee2db815d24516204b5b49941bfd46",
+    "base_sha": "9999999999999999999999999999999999999999",
+    "files": [
+      {
+        "path": "worker/internal/propose/propose.go",
+        "patch": "@@ -180,4 +180,5 @@\n \tif err := finishRun(ctx, d.Pool, runID, \"succeeded\", nil); err != nil {\n \t\treturn err\n \t}\n+\t_, _ = d.Pool.Exec(ctx, `update public.agents set last_run_at = now() where id = $1::uuid`, agent.ID)\n \treturn d.Queue.Archive(ctx, d.Config.QueueName(), msg.ID)"
+      }
+    ],
+    "evidence": []
+  },
+  "rules_from": [
+    "AGENTS.md",
+    "docs/review-rules.md"
+  ],
+  "expect": {
+    "findings": [
+      {
+        "path": "worker/internal/propose/propose.go",
+        "line": 183,
+        "rule_any": [
+          "docs/review-rules.md#go-1"
+        ],
+        "severity": "minor"
+      }
+    ],
+    "verdict": "COMMENT"
+  }
+}

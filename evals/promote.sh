@@ -8,6 +8,13 @@
 #   AGENT_CONFIG=config/issue-drafter.toml evals/promote.sh            hosted (asks before writing)
 #   PROMOTE_TARGET=local AGENT_CONFIG=config/issue-drafter.toml evals/promote.sh   local stack
 #
+# Review agents (tool_grant github.propose_review) also get the `block`
+# capability for this hash, but only if the stricter block gate passes
+# (evalscore -block-gate: blocker precision >= 0.90, zero false blocks,
+# blocker recall >= 0.60). Otherwise no capability row is written and the
+# insert trigger refuses REQUEST_CHANGES. A capability for an older hash never
+# carries over: it is keyed to granted_hash.
+#
 # An agent with no row yet is registered under the owner of triage-drafter
 # (single-owner project: the first registered agent's owner). Run from the
 # repo root with the Supabase CLI logged in and linked (hosted) or the local
@@ -33,3 +40,17 @@ select owner, '$name', '$tier', '$hash', '$hash' from public.agents where name =
 on conflict (owner, name) do update
   set config_hash = excluded.config_hash, evals_passed_hash = excluded.evals_passed_hash
 returning id, name, tier, config_hash = evals_passed_hash as active"
+
+if grep -q 'github.propose_review' "$root/worker/$config"; then
+  golden="$root/evals/$name/golden"
+  if (cd "$root/worker" && go run ./cmd/evalscore -block-gate -config "$config" "$golden" >/dev/null); then
+    echo "promote: block gate passed; granting block for $hash"
+    supabase db query ${target[@]+"${target[@]}"} "
+insert into public.agent_capabilities (agent_id, capability, granted_hash)
+select id, 'block', '$hash' from public.agents where name = '$name'
+on conflict (agent_id, capability) do update set granted_hash = excluded.granted_hash, granted_at = now()
+returning agent_id, capability, granted_hash"
+  else
+    echo "promote: block gate not met; $name stays comment-only (no block capability)"
+  fi
+fi

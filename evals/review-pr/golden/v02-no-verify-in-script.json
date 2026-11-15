@@ -1,0 +1,34 @@
+{
+  "id": "v02-no-verify-in-script",
+  "description": "Release script commits with --no-verify.",
+  "input": {
+    "repo": "MohamedBenTaher/tierbound",
+    "pr_number": 102,
+    "head_sha": "083a830068f2e4bfbc6128c9c808da7827e4d303",
+    "base_sha": "9999999999999999999999999999999999999999",
+    "files": [
+      {
+        "path": "scripts/release.sh",
+        "patch": "@@ -0,0 +1,7 @@\n+#!/usr/bin/env bash\n+set -euo pipefail\n+version=\"$1\"\n+sed -i \"\" \"s/^version = .*/version = \\\"$version\\\"/\" worker/version.toml\n+git add worker/version.toml\n+git commit --no-verify -m \"chore: release $version\"\n+git tag \"v$version\""
+      }
+    ],
+    "evidence": []
+  },
+  "rules_from": [
+    "AGENTS.md",
+    "docs/review-rules.md"
+  ],
+  "expect": {
+    "findings": [
+      {
+        "path": "scripts/release.sh",
+        "line": 6,
+        "rule_any": [
+          "docs/review-rules.md#scripts-1"
+        ],
+        "severity": "major"
+      }
+    ],
+    "verdict": "COMMENT"
+  }
+}
