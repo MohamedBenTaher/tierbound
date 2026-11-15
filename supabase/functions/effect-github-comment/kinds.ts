@@ -4,12 +4,17 @@
 // post by marker (timeout-after-success), and post once. Every kind in
 // public.kind_policy whose effector is this function has a handler here.
 import type { GitHubApp } from "./github.ts";
+import { reviewHandler } from "./review.ts";
 
 export type StoredAction = { kind: string; target: unknown; payload: unknown };
 
+// Why a precheck refused. stale: the target moved on (the PR head changed);
+// the action becomes 'stale' instead of failing.
+export type Refusal = { error: string; stale?: boolean };
+
 export type Handler = {
-  // Read-only checks against GitHub before posting; a string refuses.
-  precheck(gh: GitHubApp): Promise<string | null>;
+  // Read-only checks against GitHub before posting; non-null refuses.
+  precheck(gh: GitHubApp): Promise<Refusal | null>;
   // html_url of an earlier post carrying marker, made after `since`.
   findExisting(gh: GitHubApp, marker: string, since: string): Promise<string | null>;
   post(gh: GitHubApp, marker: string): Promise<string>;
@@ -68,7 +73,7 @@ function issueHandler(target: Record<string, unknown>, payload: Record<string, u
     precheck: async (gh: GitHubApp) => {
       const known = new Set(await gh.listLabels(repo));
       const missing = labels.filter((l) => !known.has(l));
-      return missing.length ? `unknown_label: ${missing.join(", ")}` : null;
+      return missing.length ? { error: `unknown_label: ${missing.join(", ")}` } : null;
     },
     findExisting: (gh: GitHubApp, marker: string, since: string) => gh.findMarkedIssue(repo, marker, since),
     post: (gh: GitHubApp, marker: string) => gh.createIssue(repo, { title, body: `${body}\n\n${marker}`, labels }),
@@ -78,6 +83,7 @@ function issueHandler(target: Record<string, unknown>, payload: Record<string, u
 const HANDLERS: Record<string, typeof issueHandler> = {
   github_comment: commentHandler,
   github_issue: issueHandler,
+  github_pr_review: reviewHandler,
 };
 
 // The handler for one stored action, or the reason it cannot be executed.

@@ -19,8 +19,9 @@
 //                is recorded instead of posting again (timeout-after-success).
 //
 // Despite its v1 name it executes every kind whose kind_policy.effector is
-// this function (github_comment, github_issue); kinds.ts holds the per-kind
-// validation, marker search and post.
+// this function (github_comment, github_issue, github_pr_review); kinds.ts
+// and review.ts hold the per-kind validation, marker search and post. A
+// review whose PR head moved is marked 'stale' and writes nothing.
 //   5. post + record (external_id, 'posted', executed_at, action 'executed')
 //                in one transaction, fenced on the attempts counter.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -28,7 +29,7 @@ import postgres from "npm:postgres@3.4.7";
 
 import { actionHash } from "../_shared/canonical.ts";
 import { appFromEnv, type GitHubApp, markerFor, timeoutMsFromEnv } from "./github.ts";
-import { type Handler, handlerFor } from "./kinds.ts";
+import { type Handler, handlerFor, type Refusal } from "./kinds.ts";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -36,6 +37,7 @@ type Outcome =
   | { outcome: "posted" | "recorded_existing"; external_id: string }
   | { outcome: "already_posted"; external_id: string | null }
   | { outcome: "busy" | "fence_lost" }
+  | { outcome: "stale"; error: string }
   | { outcome: "refused" | "failed"; error: string };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -123,6 +125,15 @@ async function verify(sql: Sql, actionId: string): Promise<Verified> {
   return { ok: true, handler, approvedAt: new Date(approval.decided_at).toISOString() };
 }
 
+// A precheck refusal: the effect fails with the reason (nothing was
+// written); a stale target also marks the action 'stale' (terminal).
+async function refuse(sql: Sql, actionId: string, fence: number, r: Refusal): Promise<Outcome> {
+  await fail(sql, actionId, fence, r.error);
+  if (!r.stale) return { outcome: "refused", error: r.error };
+  await sql`update public.proposed_actions set status = 'stale' where id = ${actionId} and status <> 'executed'`;
+  return { outcome: "stale", error: r.error };
+}
+
 // Timeout-after-success: only a takeover can find an earlier post.
 async function findEarlier(gh: GitHubApp, checked: Verified & { ok: true }, c: Owned, marker: string) {
   if (!c.retry) return null;
@@ -144,10 +155,7 @@ async function post(sql: Sql, gh: GitHubApp, actionId: string, checked: Verified
   const existing = await findEarlier(gh, checked, c, marker);
   if (existing) return await recorded(existing, "recorded_existing");
   const refusal = await checked.handler.precheck(gh);
-  if (refusal) {
-    await fail(sql, actionId, c.fence, refusal);
-    return { outcome: "refused", error: refusal };
-  }
+  if (refusal) return await refuse(sql, actionId, c.fence, refusal);
   assertLeaseLeft(c);
   return await recorded(await checked.handler.post(gh, marker), "posted");
 }
@@ -196,6 +204,7 @@ const STATUS: Record<Outcome["outcome"], number> = {
   already_posted: 200,
   busy: 409,
   fence_lost: 409,
+  stale: 409,
   refused: 403,
   failed: 502,
 };

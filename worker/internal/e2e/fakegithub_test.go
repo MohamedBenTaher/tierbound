@@ -46,6 +46,12 @@ type fakeGitHub struct {
 
 	issues     []fakeIssue // fakeissues_test.go
 	issuePosts int
+
+	heads        map[string]string // fakereviews_test.go: PR -> head sha
+	reviews      []fakeReview
+	reviewPosts  int
+	statuses     []fakeStatus
+	failStatuses bool
 }
 
 func startFakeGitHub(t *testing.T, h harness) *fakeGitHub {
@@ -71,6 +77,10 @@ func startFakeGitHub(t *testing.T, h harness) *fakeGitHub {
 	mux.HandleFunc("GET /repos/{owner}/{repo}/labels", f.listLabels)
 	mux.HandleFunc("GET /repos/{owner}/{repo}/issues", f.listIssues)
 	mux.HandleFunc("POST /repos/{owner}/{repo}/issues", f.createIssue)
+	mux.HandleFunc("GET /repos/{owner}/{repo}/pulls/{number}", f.getPull)
+	mux.HandleFunc("GET /repos/{owner}/{repo}/pulls/{number}/reviews", f.listReviews)
+	mux.HandleFunc("POST /repos/{owner}/{repo}/pulls/{number}/reviews", f.createReview)
+	mux.HandleFunc("POST /repos/{owner}/{repo}/statuses/{sha}", f.createStatus)
 
 	ln, err := net.Listen("tcp", h.fakeAddr)
 	if err != nil {

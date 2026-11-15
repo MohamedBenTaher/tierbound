@@ -4,6 +4,8 @@
 // client injectable (the e2e tests point it at a local fake GitHub).
 
 export type Target = { repo: string; issue_number: number };
+export type ReviewComment = { path: string; line: number; side: "RIGHT" | "LEFT"; body: string };
+export type ReviewStatus = { state: "success" | "failure"; context: "tierbound/review"; description: string };
 
 type AppConfig = {
   apiUrl: string;
@@ -79,6 +81,32 @@ export class GitHubApp {
     return created.html_url;
   }
 
+  async pullHeadSha(repo: string, pr: number): Promise<string> {
+    const token = await this.installationToken();
+    const pull = await this.request<{ head: { sha: string } }>("GET", pullPath(repo, pr), token);
+    return pull.head.sha;
+  }
+
+  // html_url of the PR review carrying marker, if one exists.
+  async findMarkedReview(repo: string, pr: number, marker: string): Promise<string | null> {
+    return await this.findMarked(`${pullPath(repo, pr)}/reviews?`, marker);
+  }
+
+  async createReview(
+    repo: string,
+    pr: number,
+    review: { commit_id: string; event: string; body: string; comments: ReviewComment[] },
+  ): Promise<string> {
+    const token = await this.installationToken();
+    const created = await this.request<{ html_url: string }>("POST", `${pullPath(repo, pr)}/reviews`, token, review);
+    return created.html_url;
+  }
+
+  async createStatus(repo: string, sha: string, status: ReviewStatus): Promise<void> {
+    const token = await this.installationToken();
+    await this.request("POST", `${repoPath(repo)}/statuses/${sha}`, token, status);
+  }
+
   private async findMarked(listPath: string, marker: string): Promise<string | null> {
     const token = await this.installationToken();
     for (let page = 1; page <= MAX_PAGES; page++) {
@@ -138,6 +166,11 @@ export class GitHubApp {
 function repoPath(repo: string): string {
   if (!REPO_RE.test(repo)) throw new Error(`invalid repo ${repo}`);
   return `/repos/${repo}`;
+}
+
+function pullPath(repo: string, pr: number): string {
+  if (!Number.isInteger(pr) || pr < 1) throw new Error(`invalid pr_number ${pr}`);
+  return `${repoPath(repo)}/pulls/${pr}`;
 }
 
 function issuePath(target: Target): string {
