@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/MohamedBenTaher/tierbound/worker/internal/hashing"
 )
 
 // Plan step 4.4: the MCP surface shows a github_issue as a new issue (repo,
@@ -45,4 +47,44 @@ func TestMCPShowsAndApprovesIssue(t *testing.T) {
 	}
 	h.waitPosted(t, a)
 	assertOneIssue(t, gh, a, 1)
+}
+
+// Plan step 5.4: get_action previews a review with its verdict line, the
+// quoted rule behind each finding, every inline comment, and the head sha.
+func TestMCPPreviewsReview(t *testing.T) {
+	h := setup(t)
+	owner, token := h.signedInUser(t)
+	target := map[string]any{"repo": "o/r", "pr_number": 12, "head_sha": reviewHead}
+	payload := map[string]any{
+		"event": "COMMENT", "body": "tierbound review: 1 finding.",
+		"comments": []any{map[string]any{"path": "a.sql", "line": 3, "side": "RIGHT", "body": "Grants a write on approvals."}},
+		"status":   map[string]any{"state": "success", "context": "tierbound/review", "description": "advisory"},
+		"findings": []any{map[string]any{
+			"path": "a.sql", "line": 3, "side": "RIGHT", "severity": "blocker",
+			"rule":     map[string]any{"source": "AGENTS.md", "anchor": "invariants-1", "quote": "The worker never holds write credentials"},
+			"evidence": []any{}, "message": "Grants a write on approvals.", "suggestion": "Drop it.",
+		}},
+	}
+	hash, err := hashing.ActionHash("github_pr_review", target, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := h.insertAction(t, owner, "github_pr_review", mustJSON(t, target), mustJSON(t, payload), hash)
+
+	r := h.callTool(t, token, "get_action", map[string]any{"action_id": id})
+	var got struct {
+		Preview string `json:"preview"`
+	}
+	if err := json.Unmarshal([]byte(r.Text), &got); r.IsError || err != nil {
+		t.Fatalf("get_action: %s %v", r.Text, err)
+	}
+	for _, want := range []string{
+		"Review of o/r#12 at 3f2a9c0", "COMMENT · status success (advisory)",
+		`a.sql:3 [blocker] AGENTS.md#invariants-1: "The worker never holds write credentials"`,
+		"--- a.sql:3 (RIGHT)\nGrants a write on approvals.", "/pull/12/files/" + reviewHead,
+	} {
+		if !strings.Contains(got.Preview, want) {
+			t.Fatalf("preview lacks %q:\n%s", want, got.Preview)
+		}
+	}
 }

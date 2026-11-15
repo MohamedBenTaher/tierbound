@@ -91,7 +91,7 @@ function buildServer(supabase: SupabaseClient): McpServer {
   server.registerTool(
     "list_pending_actions",
     {
-      description: "List proposed actions waiting for your decision, optionally of one kind (github_comment, github_issue)",
+      description: "List proposed actions waiting for your decision, optionally of one kind (github_comment, github_issue, github_pr_review)",
       inputSchema: z.object({ kind: z.string().min(1).max(64).optional() }),
       annotations: { readOnlyHint: true },
     },
@@ -101,7 +101,7 @@ function buildServer(supabase: SupabaseClient): McpServer {
     "get_action",
     {
       description:
-        "Show one action: a readable preview by kind (comment or new issue), the raw payload, its payload_hash, and the agent config_hash",
+        "Show one action: a readable preview by kind (comment, new issue, or PR review with findings and quoted rules), the raw payload, its payload_hash, and the agent config_hash",
       inputSchema: z.object({ action_id: uuid }),
       annotations: { readOnlyHint: true },
     },

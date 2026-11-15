@@ -4,6 +4,8 @@
 // preview bug can never change what executes. Unknown kinds fall back to the
 // raw JSON, never to an empty string.
 
+import { renderReview } from "./render_review.ts";
+
 type Row = { kind: string; target: unknown; payload?: unknown };
 type Obj = Record<string, unknown>;
 
@@ -18,11 +20,13 @@ function labelsOf(payload: Obj): string {
 const RENDERERS: Record<string, (target: Obj, payload: Obj) => string> = {
   github_comment: (t, p) => `Comment on ${t.repo}#${t.issue_number}\n\n${p.body}`,
   github_issue: (t, p) => `New issue in ${t.repo}\nTitle: ${p.title}\nLabels: ${labelsOf(p)}\n\n${p.body}`,
+  github_pr_review: renderReview,
 };
 
 const SUMMARIES: Record<string, (target: Obj) => string> = {
   github_comment: (t) => `comment on ${t.repo}#${t.issue_number}`,
   github_issue: (t) => `new issue in ${t.repo}`,
+  github_pr_review: (t) => `review of ${t.repo}#${t.pr_number} at ${String(t.head_sha).slice(0, 7)}`,
 };
 
 export function preview(row: Row): string {
