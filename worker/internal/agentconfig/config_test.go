@@ -110,3 +110,34 @@ func TestProviderHashedOnlyWhenSet(t *testing.T) {
 		t.Fatal("unset provider hash unstable")
 	}
 }
+
+// V2_ACTIONS 4.2: review-policy is part of config_hash, so changing which
+// rules may block re-runs the eval gate. A review grant needs rule sources.
+func TestReviewPolicyIsHashed(t *testing.T) {
+	c, err := Load(filepath.Join("..", "..", "config", "review-pr.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Grants(GrantProposeReview) || len(c.Review.RuleSources) == 0 || c.Provider != "anthropic" {
+		t.Fatalf("review-pr config: %+v", c)
+	}
+	h0, _ := c.Hash()
+	more := c
+	more.Review.BlockingRules = append([]string{"AGENTS.md#repo-layout"}, c.Review.BlockingRules...)
+	h1, _ := more.Hash()
+	reordered := c
+	reordered.Review.BlockingRules = []string{c.Review.BlockingRules[1], c.Review.BlockingRules[0]}
+	reordered.Review.BlockingRules = append(reordered.Review.BlockingRules, c.Review.BlockingRules[2:]...)
+	h2, _ := reordered.Hash()
+	if h0 == h1 || h0 != h2 {
+		t.Fatalf("hash: base %s, extra blocking rule %s (want different), reordered %s (want same)", h0, h1, h2)
+	}
+
+	dir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(dir, "p.md"), []byte("p"), 0o600)
+	cfg := "name='r'\ntier='draft'\nmodel='m'\nprompt_path='p.md'\ntool_grant=['github.propose_review']\n"
+	_ = os.WriteFile(filepath.Join(dir, "c.toml"), []byte(cfg), 0o600)
+	if _, err := Load(filepath.Join(dir, "c.toml")); err == nil {
+		t.Fatal("review grant without rule_sources loaded")
+	}
+}

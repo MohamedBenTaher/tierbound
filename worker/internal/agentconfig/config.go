@@ -30,6 +30,23 @@ const (
 // config_hash, so switching kinds re-runs the eval gate.
 const GrantProposeIssue = "github.propose_issue"
 
+// GrantProposeReview makes the agent propose github_pr_review actions
+// (plan Phase 5, docs/V2_ACTIONS.md section 4.2).
+const GrantProposeReview = "github.propose_review"
+
+// Review is review-policy (V2_ACTIONS 4.2), part of config_hash when set:
+// which repo files are rules (read at the PR's base sha), which rule keys
+// may block, and whether the advisory tierbound/review status is posted.
+type Review struct {
+	RuleSources   []string `toml:"rule_sources"`
+	BlockingRules []string `toml:"blocking_rules"`
+	Status        bool     `toml:"status"`
+}
+
+func (r Review) isZero() bool {
+	return len(r.RuleSources) == 0 && len(r.BlockingRules) == 0 && !r.Status
+}
+
 // DefaultQueue is the pgmq queue ingest feeds (plan step 1.3).
 const DefaultQueue = "jobs"
 
@@ -50,6 +67,7 @@ type Config struct {
 	// Queue is the pgmq queue this agent's worker reads (default "jobs").
 	// Not part of config_hash: it routes jobs, it does not change behaviour.
 	Queue  string `toml:"queue"`
+	Review Review `toml:"review"`
 	Prompt string `toml:"-"`
 }
 
@@ -79,6 +97,9 @@ func Load(path string) (Config, error) {
 	if !slices.Contains([]string{"", "groq", "anthropic", "openai"}, c.Provider) {
 		return Config{}, fmt.Errorf("agentconfig: %s: provider %q: want groq, anthropic or openai", path, c.Provider)
 	}
+	if c.Grants(GrantProposeReview) && len(c.Review.RuleSources) == 0 {
+		return Config{}, fmt.Errorf("agentconfig: %s: %s needs review.rule_sources", path, GrantProposeReview)
+	}
 	if c.PromptPath == "" {
 		return Config{}, fmt.Errorf("agentconfig: %s: prompt_path is required", path)
 	}
@@ -106,6 +127,13 @@ func (c Config) Hash() (string, error) {
 	if c.Provider != "" {
 		fields["provider"] = c.Provider
 	}
+	if !c.Review.isZero() {
+		fields["review"] = map[string]any{
+			"rule_sources":   c.Review.RuleSources,
+			"blocking_rules": sorted(c.Review.BlockingRules),
+			"status":         c.Review.Status,
+		}
+	}
 	return hashing.Canonical(fields)
 }
 
@@ -120,4 +148,10 @@ func (c Config) QueueName() string {
 // Grants reports whether tool_grant contains grant.
 func (c Config) Grants(grant string) bool {
 	return slices.Contains(c.ToolGrant, grant)
+}
+
+func sorted(in []string) []string {
+	out := slices.Clone(in)
+	slices.Sort(out)
+	return out
 }

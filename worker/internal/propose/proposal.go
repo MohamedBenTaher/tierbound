@@ -3,6 +3,7 @@ package propose
 import (
 	"errors"
 	"fmt"
+	"regexp"
 
 	"github.com/MohamedBenTaher/tierbound/worker/internal/agentconfig"
 	"github.com/MohamedBenTaher/tierbound/worker/internal/issuedraft"
@@ -13,6 +14,8 @@ type proposal struct {
 	kind    string
 	target  map[string]any
 	payload map[string]any
+	stats   map[string]any // runs.stats; nil records nothing
+	note    string         // appended to the "proposed" log line
 }
 
 // errAbstained: the agent read the input and declined to propose. The run
@@ -23,10 +26,30 @@ var errAbstained = errors.New("agent abstained")
 // says so (and is part of config_hash), so a different kind is a different
 // config that must pass the eval gate again.
 func kindFor(cfg agentconfig.Config) string {
-	if cfg.Grants(agentconfig.GrantProposeIssue) {
+	switch {
+	case cfg.Grants(agentconfig.GrantProposeReview):
+		return KindGitHubPRReview
+	case cfg.Grants(agentconfig.GrantProposeIssue):
 		return KindGitHubIssue
 	}
 	return KindGitHubComment
+}
+
+var shaRE = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
+// validateJob checks the job carries what its kind needs; a bad job is
+// dead-lettered, never retried.
+func validateJob(kind string, job Job) error {
+	if kind != KindGitHubPRReview {
+		if job.Repo == "" || job.IssueNumber < 1 {
+			return errors.New("job missing repo/issue_number")
+		}
+		return nil
+	}
+	if job.Repo == "" || job.PRNumber < 1 || !shaRE.MatchString(job.HeadSha) || !shaRE.MatchString(job.BaseSha) {
+		return errors.New("review job needs repo, pr_number, head_sha and base_sha (40 hex)")
+	}
+	return nil
 }
 
 // buildProposal turns the model's draft into the action envelope for kind.

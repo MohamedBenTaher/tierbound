@@ -87,7 +87,7 @@ func TestWorkerRoleCanUseItsQueues(t *testing.T) {
 	deps, _, cleanup := setup(t, true)
 	defer cleanup()
 
-	for _, queue := range []string{"jobs", "jobs_issue"} {
+	for _, queue := range []string{"jobs", "jobs_issue", "jobs_review"} {
 		workerQueueRoundTrip(t, deps.Pool, queue)
 	}
 }
@@ -118,6 +118,7 @@ func workerQueueRoundTrip(t *testing.T, pool *pgxpool.Pool, queue string) {
 		{"set_vt " + queue, `select msg_id from pgmq.set_vt('` + queue + `', ` + id + `, 60)`},
 		{"archive " + queue, `select pgmq.archive('` + queue + `', ` + id + `::bigint)`},
 		{"send jobs_dead", `select pgmq.send('jobs_dead', '{"delivery_id":"test-grants"}'::jsonb)`},
+		{"ask can_block", `select public.tierbound_can_block(gen_random_uuid())`},
 	}
 	for _, s := range steps {
 		if _, err := tx.Exec(ctx, s.sql); err != nil {

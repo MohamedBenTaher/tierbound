@@ -1,0 +1,36 @@
+# review-pr agent config. Plan Phase 5 (docs/V2_ACTIONS.md section 4.2).
+# Proposes github_pr_review actions: findings on a pull request, each
+# grounded in a diff line and a quoted repo rule, posted only after a human
+# approves the exact payload. Never approves a PR.
+#
+# config_hash covers prompt, model, tool_grant, tier, provider and the
+# [review] policy; `queue` only routes jobs. Inactive until its golden set
+# (evals/review-pr) passes the gate for this exact hash. Blocking
+# (REQUEST_CHANGES) additionally needs the `block` capability, granted only
+# when the eval clears the stricter bar; nobody holds it today.
+
+name = "review-pr"
+tier = "draft"
+provider = "anthropic" # ANTHROPIC_API_KEY; "openai" + OPENAI_API_KEY also works
+model = "claude-sonnet-5-5"
+prompt_path = "prompts/review-pr.md"
+
+# github.propose_review: this agent proposes github_pr_review only.
+tool_grant = ["github.read_pulls", "github.propose_review"]
+
+queue = "jobs_review"
+
+[review]
+# Read at the PR's base sha, so a PR cannot weaken the rules it is judged by.
+rule_sources = ["AGENTS.md", "docs/review-rules.md"]
+# Only a grounded blocker citing one of these may request changes (and only
+# with the block capability).
+blocking_rules = [
+  "AGENTS.md#invariants-1",
+  "AGENTS.md#invariants-2",
+  "AGENTS.md#invariants-3",
+  "AGENTS.md#invariants-4",
+  "AGENTS.md#invariants-5",
+]
+# Post the advisory (not required) tierbound/review commit status.
+status = true

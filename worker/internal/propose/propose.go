@@ -29,6 +29,8 @@ const (
 	KindGitHubComment = "github_comment"
 	// KindGitHubIssue opens one new issue (plan step 4.1, V2_ACTIONS 4.1).
 	KindGitHubIssue = "github_issue"
+	// KindGitHubPRReview reviews one pull request (plan Phase 5, V2_ACTIONS 4.2).
+	KindGitHubPRReview = "github_pr_review"
 
 	// MaxAttempts is the read count after which a failing job is dead-lettered
 	// instead of retried.
@@ -40,11 +42,20 @@ const (
 	slowVTSeconds = 120
 )
 
-// Job is the queue message ingest enqueues (plan step 1.3).
+// Job is the queue message ingest enqueues (plan step 1.3). Review jobs
+// carry the pull request and the two shas instead of an issue number.
 type Job struct {
 	Repo        string `json:"repo"`
 	IssueNumber int    `json:"issue_number"`
 	DeliveryID  string `json:"delivery_id"`
+	PRNumber    int    `json:"pr_number"`
+	HeadSha     string `json:"head_sha"`
+	BaseSha     string `json:"base_sha"`
+}
+
+// subject is "repo#n" for logs.
+func (j Job) subject() string {
+	return fmt.Sprintf("%s#%d", j.Repo, max(j.IssueNumber, j.PRNumber))
 }
 
 // Fetcher fetches one issue (githubro.Client in production).
@@ -62,6 +73,8 @@ type Deps struct {
 	Pool    *pgxpool.Pool
 	Queue   *pgmq.Client
 	Fetcher Fetcher
+	// PRs reads pull request diffs and rule files (review agents only).
+	PRs     PRFetcher
 	Drafter Drafter
 	Config  agentconfig.Config
 	// Log receives one line per job outcome (proposed, duplicate, abstained,
@@ -96,8 +109,8 @@ func processMessage(ctx context.Context, d Deps, msg pgmq.Message) error {
 	if err := json.Unmarshal(msg.Body, &job); err != nil {
 		return deadLetter(ctx, d, msg, fmt.Errorf("malformed job: %w", err))
 	}
-	if job.Repo == "" || job.IssueNumber < 1 {
-		return deadLetter(ctx, d, msg, errors.New("job missing repo/issue_number"))
+	if err := validateJob(kindFor(d.Config), job); err != nil {
+		return deadLetter(ctx, d, msg, err)
 	}
 
 	agent, err := lookupAgent(ctx, d.Pool, d.Config.Name)
@@ -131,26 +144,13 @@ func attempt(ctx context.Context, d Deps, msg pgmq.Message, job Job, agent *agen
 	// SPEC sections 2 and 5 (plan step 3.3): anything the activation rule
 	// refuses is skipped, not retried.
 	if reason := activationError(agent, configHash); reason != nil {
-		d.logf("skipped %s#%d: %v", job.Repo, job.IssueNumber, reason)
+		d.logf("skipped %s: %v", job.subject(), reason)
 		return skip(ctx, d, msg, runID, reason)
 	}
 
-	issue, err := d.Fetcher.FetchIssue(ctx, job.Repo, job.IssueNumber)
-	if err != nil {
-		return err
-	}
-	// The draft call is slow; extend the lease so the message is not redelivered
-	// mid-draft.
-	if err := d.Queue.SetVT(ctx, d.Config.QueueName(), msg.ID, slowVTSeconds); err != nil {
-		return err
-	}
-	draft, err := d.Drafter.DraftComment(ctx, d.Config.Prompt, FormIssueMessage(issue))
-	if err != nil {
-		return err
-	}
-	p, err := buildProposal(kindFor(d.Config), job, draft)
+	p, err := draftProposal(ctx, d, msg, job, agent.ID)
 	if errors.Is(err, errAbstained) {
-		d.logf("abstained on %s#%d: %s", job.Repo, job.IssueNumber, strings.TrimPrefix(err.Error(), errAbstained.Error()+": "))
+		d.logf("abstained on %s: %s", job.subject(), strings.TrimPrefix(err.Error(), errAbstained.Error()+": "))
 		return skip(ctx, d, msg, runID, err)
 	}
 	if err != nil {
@@ -160,17 +160,19 @@ func attempt(ctx context.Context, d Deps, msg pgmq.Message, job Job, agent *agen
 	if err != nil {
 		return err
 	}
-	// Plan step 1.4: idempotency_key = agent_id:repo:issue:config_hash.
-	key := fmt.Sprintf("%s:%s:%d:%s", agent.ID, job.Repo, job.IssueNumber, configHash)
+	key := idempotencyKey(agent.ID, job, configHash)
+	if err := recordStats(ctx, d.Pool, runID, p.stats); err != nil {
+		return err
+	}
 
 	actionID, err := insertAction(ctx, d.Pool, runID, p, payloadHash, key)
 	switch {
 	case isUniqueViolation(err):
-		d.logf("already proposed %s for %s#%d (duplicate delivery)", p.kind, job.Repo, job.IssueNumber)
+		d.logf("already proposed %s for %s (duplicate delivery)", p.kind, job.subject())
 	case err != nil:
 		return err
 	default:
-		d.logf("proposed %s %s for %s#%d", p.kind, actionID, job.Repo, job.IssueNumber)
+		d.logf("proposed %s %s for %s%s", p.kind, actionID, job.subject(), p.note)
 	}
 	// A unique violation means an earlier attempt already inserted this exact
 	// action (at-least-once delivery): exactly one action is the invariant.
@@ -178,6 +180,42 @@ func attempt(ctx context.Context, d Deps, msg pgmq.Message, job Job, agent *agen
 		return err
 	}
 	return d.Queue.Archive(ctx, d.Config.QueueName(), msg.ID)
+}
+
+// draftProposal fetches the job's input, drafts with the model, and builds the
+// action envelope for the agent's kind.
+func draftProposal(ctx context.Context, d Deps, msg pgmq.Message, job Job, agentID string) (proposal, error) {
+	if kindFor(d.Config) == KindGitHubPRReview {
+		return proposeReview(ctx, d, msg, job, agentID)
+	}
+	issue, err := d.Fetcher.FetchIssue(ctx, job.Repo, job.IssueNumber)
+	if err != nil {
+		return proposal{}, err
+	}
+	draft, err := draftSlow(ctx, d, msg, FormIssueMessage(issue))
+	if err != nil {
+		return proposal{}, err
+	}
+	return buildProposal(kindFor(d.Config), job, draft)
+}
+
+// draftSlow extends the lease, since the model call is slow and the message
+// must not be redelivered mid-draft, then drafts.
+func draftSlow(ctx context.Context, d Deps, msg pgmq.Message, userMessage string) (string, error) {
+	if err := d.Queue.SetVT(ctx, d.Config.QueueName(), msg.ID, slowVTSeconds); err != nil {
+		return "", err
+	}
+	return d.Drafter.DraftComment(ctx, d.Config.Prompt, userMessage)
+}
+
+// idempotencyKey: agent_id:repo:issue:config_hash (plan step 1.4); a review
+// is per head sha, so a new push gets a new review
+// (agent_id:repo:pr:head_sha:config_hash).
+func idempotencyKey(agentID string, job Job, configHash string) string {
+	if job.PRNumber > 0 {
+		return fmt.Sprintf("%s:%s:%d:%s:%s", agentID, job.Repo, job.PRNumber, job.HeadSha, configHash)
+	}
+	return fmt.Sprintf("%s:%s:%d:%s", agentID, job.Repo, job.IssueNumber, configHash)
 }
 
 // skip records the run as skipped with reason and archives the job: nothing
@@ -275,6 +313,22 @@ func finishRun(ctx context.Context, pool *pgxpool.Pool, runID, status string, ca
 		where id = $1::uuid`, runID, status, errText)
 	if err != nil {
 		return fmt.Errorf("finish run %s: %w", runID, err)
+	}
+	return nil
+}
+
+// recordStats stores the run's counters (runs.stats), such as how many
+// review findings grounding dropped.
+func recordStats(ctx context.Context, pool *pgxpool.Pool, runID string, stats map[string]any) error {
+	if stats == nil {
+		return nil
+	}
+	b, err := json.Marshal(stats)
+	if err != nil {
+		return fmt.Errorf("marshal stats: %w", err)
+	}
+	if _, err := pool.Exec(ctx, `update public.runs set stats = $2::jsonb where id = $1::uuid`, runID, string(b)); err != nil {
+		return fmt.Errorf("record stats for run %s: %w", runID, err)
 	}
 	return nil
 }

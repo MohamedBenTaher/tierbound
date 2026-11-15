@@ -63,10 +63,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, "worker:", err)
 		os.Exit(1)
 	}
+	gh := githubro.New(os.Getenv("GITHUB_READ_TOKEN"), os.Getenv("GITHUB_API_URL"))
 	deps := propose.Deps{
 		Pool:    pool,
 		Queue:   pgmq.New(pool),
-		Fetcher: githubro.New(os.Getenv("GITHUB_READ_TOKEN"), os.Getenv("GITHUB_API_URL")),
+		Fetcher: gh,
+		PRs:     gh,
 		Drafter: drafter,
 		Config:  cfg,
 		Log:     func(line string) { log.Print(line) },
