@@ -209,9 +209,14 @@ func TestProcessOneRefusesWithoutEvalsPass(t *testing.T) {
 	defer cleanup()
 
 	enqueue(t, deps, Job{Repo: "MohamedBenTaher/tierbound", IssueNumber: 7, DeliveryID: "test-refuse"})
+	var logs []string
+	deps.Log = func(line string) { logs = append(logs, line) }
 
 	if _, err := ProcessOne(context.Background(), deps); err != nil {
 		t.Fatal(err)
+	}
+	if len(logs) != 1 || !strings.HasPrefix(logs[0], "skipped MohamedBenTaher/tierbound#7: activation: ") {
+		t.Fatalf("outcome log lines = %q, want one skipped line", logs)
 	}
 	if n := countActions(t, deps, agentID); n != 0 {
 		t.Fatalf("gate refused but %d actions were proposed", n)
@@ -254,12 +259,17 @@ func TestProcessOneDeadLettersWrongShapeJob(t *testing.T) {
 	if err := deps.Queue.Send(context.Background(), "jobs", []byte(wrongShape)); err != nil {
 		t.Fatal(err)
 	}
+	var logs []string
+	deps.Log = func(line string) { logs = append(logs, line) }
 	processed, err := ProcessOne(context.Background(), deps)
 	if !processed {
 		t.Fatal("queue was empty")
 	}
 	if err == nil {
 		t.Fatal("wrong-shape job did not report an error")
+	}
+	if len(logs) != 1 || !strings.Contains(logs[0], "dead-lettered message ") || !strings.Contains(logs[0], "missing repo/issue_number") {
+		t.Fatalf("outcome log lines = %q, want one dead-lettered line", logs)
 	}
 
 	var queued, dead int

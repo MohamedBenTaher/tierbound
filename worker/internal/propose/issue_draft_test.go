@@ -18,6 +18,8 @@ func TestIssueAgentProposesOneIssue(t *testing.T) {
 	ctx := context.Background()
 
 	issueAgent(t, &deps, agentID)
+	var logs []string
+	deps.Log = func(line string) { logs = append(logs, line) }
 	deps.Drafter = fakeDrafter{body: `{"title":"Retry the effector once","body":"## Problem\nIt retries forever.\n\n## Done when\n- [ ] one retry","labels":["bug"]}`}
 	defer func() {
 		_, _ = deps.Pool.Exec(ctx, `delete from pgmq.q_jobs_issue where message->>'delivery_id' like 'test-%'`)
@@ -35,6 +37,11 @@ func TestIssueAgentProposesOneIssue(t *testing.T) {
 	}
 	if n := countActions(t, deps, agentID); n != 1 {
 		t.Fatalf("want 1 proposed_action, got %d", n)
+	}
+	if len(logs) != 2 || !strings.HasPrefix(logs[0], "proposed github_issue ") ||
+		!strings.HasSuffix(logs[0], " for MohamedBenTaher/tierbound#9") ||
+		logs[1] != "already proposed github_issue for MohamedBenTaher/tierbound#9 (duplicate delivery)" {
+		t.Fatalf("outcome log lines = %q", logs)
 	}
 
 	want, err := hashing.ActionHash(KindGitHubIssue, map[string]any{"repo": job.Repo}, map[string]any{
@@ -81,6 +88,8 @@ func TestIssueAgentAbstainProposesNothing(t *testing.T) {
 	ctx := context.Background()
 	issueAgent(t, &deps, agentID)
 	deps.Drafter = fakeDrafter{body: `{"abstain":"no actionable problem in the input"}`}
+	var logs []string
+	deps.Log = func(line string) { logs = append(logs, line) }
 
 	body := []byte(`{"repo":"MohamedBenTaher/tierbound","issue_number":10,"delivery_id":"test-abstain"}`)
 	if err := deps.Queue.Send(ctx, "jobs_issue", body); err != nil {
@@ -91,6 +100,9 @@ func TestIssueAgentAbstainProposesNothing(t *testing.T) {
 	}
 	if n := countActions(t, deps, agentID); n != 0 {
 		t.Fatalf("abstain proposed %d actions, want 0", n)
+	}
+	if want := "abstained on MohamedBenTaher/tierbound#10: no actionable problem in the input"; len(logs) != 1 || logs[0] != want {
+		t.Fatalf("outcome log lines = %q, want [%q]", logs, want)
 	}
 	var status, reason string
 	if err := deps.Pool.QueryRow(ctx, `select status, coalesce(error, '') from public.runs

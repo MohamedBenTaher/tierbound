@@ -64,6 +64,16 @@ type Deps struct {
 	Fetcher Fetcher
 	Drafter Drafter
 	Config  agentconfig.Config
+	// Log receives one line per job outcome (proposed, duplicate, abstained,
+	// skipped, dead-lettered). Failures are returned as errors instead. nil
+	// discards.
+	Log func(line string)
+}
+
+func (d Deps) logf(format string, args ...any) {
+	if d.Log != nil {
+		d.Log(fmt.Sprintf(format, args...))
+	}
 }
 
 // ProcessOne reads at most one job and turns it into at most one
@@ -121,6 +131,7 @@ func attempt(ctx context.Context, d Deps, msg pgmq.Message, job Job, agent *agen
 	// SPEC sections 2 and 5 (plan step 3.3): anything the activation rule
 	// refuses is skipped, not retried.
 	if reason := activationError(agent, configHash); reason != nil {
+		d.logf("skipped %s#%d: %v", job.Repo, job.IssueNumber, reason)
 		return skip(ctx, d, msg, runID, reason)
 	}
 
@@ -139,6 +150,7 @@ func attempt(ctx context.Context, d Deps, msg pgmq.Message, job Job, agent *agen
 	}
 	p, err := buildProposal(kindFor(d.Config), job, draft)
 	if errors.Is(err, errAbstained) {
+		d.logf("abstained on %s#%d: %s", job.Repo, job.IssueNumber, strings.TrimPrefix(err.Error(), errAbstained.Error()+": "))
 		return skip(ctx, d, msg, runID, err)
 	}
 	if err != nil {
@@ -151,9 +163,14 @@ func attempt(ctx context.Context, d Deps, msg pgmq.Message, job Job, agent *agen
 	// Plan step 1.4: idempotency_key = agent_id:repo:issue:config_hash.
 	key := fmt.Sprintf("%s:%s:%d:%s", agent.ID, job.Repo, job.IssueNumber, configHash)
 
-	err = insertAction(ctx, d.Pool, runID, p, payloadHash, key)
-	if err != nil && !isUniqueViolation(err) {
+	actionID, err := insertAction(ctx, d.Pool, runID, p, payloadHash, key)
+	switch {
+	case isUniqueViolation(err):
+		d.logf("already proposed %s for %s#%d (duplicate delivery)", p.kind, job.Repo, job.IssueNumber)
+	case err != nil:
 		return err
+	default:
+		d.logf("proposed %s %s for %s#%d", p.kind, actionID, job.Repo, job.IssueNumber)
 	}
 	// A unique violation means an earlier attempt already inserted this exact
 	// action (at-least-once delivery): exactly one action is the invariant.
@@ -173,6 +190,7 @@ func skip(ctx context.Context, d Deps, msg pgmq.Message, runID string, reason er
 }
 
 func deadLetter(ctx context.Context, d Deps, msg pgmq.Message, cause error) error {
+	d.logf("dead-lettered message %d: %v", msg.ID, cause)
 	if err := d.Queue.Send(ctx, queueDead, msg.Body); err != nil {
 		return fmt.Errorf("dead-letter failed: %w (cause: %w)", err, cause)
 	}
@@ -261,27 +279,30 @@ func finishRun(ctx context.Context, pool *pgxpool.Pool, runID, status string, ca
 	return nil
 }
 
+// insertAction inserts one proposed_action and returns its id.
 func insertAction(ctx context.Context, pool *pgxpool.Pool, runID string,
 	p proposal, payloadHash, idempotencyKey string,
-) error {
+) (string, error) {
 	targetJSON, err := json.Marshal(p.target)
 	if err != nil {
-		return fmt.Errorf("marshal target: %w", err)
+		return "", fmt.Errorf("marshal target: %w", err)
 	}
 	payloadJSON, err := json.Marshal(p.payload)
 	if err != nil {
-		return fmt.Errorf("marshal payload: %w", err)
+		return "", fmt.Errorf("marshal payload: %w", err)
 	}
-	_, err = pool.Exec(ctx, `
+	var id string
+	err = pool.QueryRow(ctx, `
 		insert into public.proposed_actions
 			(run_id, kind, target, payload, payload_hash, idempotency_key)
-		values ($1::uuid, $2, $3::jsonb, $4::jsonb, $5, $6)`,
+		values ($1::uuid, $2, $3::jsonb, $4::jsonb, $5, $6)
+		returning id::text`,
 		runID, p.kind, string(targetJSON), string(payloadJSON),
-		payloadHash, idempotencyKey)
+		payloadHash, idempotencyKey).Scan(&id)
 	if err != nil {
-		return fmt.Errorf("insert proposed_action: %w", err)
+		return "", fmt.Errorf("insert proposed_action: %w", err)
 	}
-	return nil
+	return id, nil
 }
 
 func isUniqueViolation(err error) bool {

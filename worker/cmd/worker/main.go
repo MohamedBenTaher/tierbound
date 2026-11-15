@@ -64,6 +64,7 @@ func main() {
 		Fetcher: githubro.New(os.Getenv("GITHUB_READ_TOKEN"), os.Getenv("GITHUB_API_URL")),
 		Drafter: llm.New(os.Getenv("GROQ_API_KEY"), cfg.Model, os.Getenv("GROQ_API_URL")),
 		Config:  cfg,
+		Log:     func(line string) { log.Print(line) },
 	}
 
 	if *once {
