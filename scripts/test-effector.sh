@@ -3,6 +3,7 @@
 # Supabase stack and a fake GitHub API (worker/internal/e2e).
 #
 #   supabase start && scripts/test-effector.sh
+#   TIERBOUND_ENV_FILE=.env.local.bak scripts/test-effector.sh   # .env holds hosted values
 #
 # What it does: generates a throwaway GitHub App key (PKCS#1, like GitHub's),
 # serves the Edge Functions with effector secrets that point GITHUB_API_URL at
@@ -13,10 +14,24 @@ set -euo pipefail
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 cd "$(git rev-parse --show-toplevel)"
 
+# The env file must describe the LOCAL stack: these tests create and delete
+# rows. TIERBOUND_ENV_FILE picks another file (e.g. a local backup when .env
+# holds hosted values); the guard below refuses any non-local target.
+env_file="${TIERBOUND_ENV_FILE:-.env}"
 set -a
-# shellcheck disable=SC1091
-. ./.env
+# shellcheck disable=SC1090
+. "./$env_file"
 set +a
+
+for var in SUPABASE_URL DATABASE_URL WORKER_DATABASE_URL; do
+  host="$(python3 -c 'import sys, urllib.parse as u; print(u.urlparse(sys.argv[1]).hostname or "")' "${!var:-}")"
+  case "$host" in
+    127.0.0.1|localhost) ;;
+    *) echo "test-effector: $var in $env_file is not local (host '$host'); refusing to run destructive tests." >&2
+       echo "             Set TIERBOUND_ENV_FILE to a file with local values." >&2
+       exit 2 ;;
+  esac
+done
 
 FAKE_PORT=54399
 tmp="$(mktemp -d)"
