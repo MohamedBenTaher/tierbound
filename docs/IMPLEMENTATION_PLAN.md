@@ -821,7 +821,7 @@ Commit this as its own step: `docs(w4.0): AGENTS.md invariants for v2`.
 **Status (2026-11-14).** Built: 5.3, 5.4, 5.5 and the 6.1 mechanism; deferred: 5.1 and 5.2. Notes against the steps below:
 - **5.3:** done as written, plus the provider interface (V2_ACTIONS §11; `provider` is its own config field). `review-policy` is the `[review]` table in `worker/config/review-pr.toml`. Rules come from `AGENTS.md` and the new `docs/review-rules.md`, read at `base_sha`. Anchors are heading-slug prefixes, with `-N` for the N-th numbered item. The grounding check refuses ten cases, and `runs.stats` records the dropped findings and why. The queue is `jobs_review`; the worker calls `tierbound_can_block()` but cannot read capabilities.
 - **5.4:** the handler lives in `effect-github-comment/review.ts`. The function keeps its v1 name so the hosted webhook URL does not move. There is no `effects.progress` column: on takeover, the marked review is found and only the status is reposted (statuses are idempotent). A moved head marks the action `stale` and writes nothing. The MCP preview shows the verdict line (naming the blocking rule), the findings with quoted rules, the comments as posted, and the head sha.
-- **5.5:** 21 golden PRs (13 seeded, 8 clean, one injection), the set-level scorer, and both gates in `evals/review-pr/rubric.json`. **No recording yet:** it needs `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY` with `provider = "openai"`). Until it is recorded, `review-pr` is not in `evals/gate.sh` `ALL_CONFIGS` and cannot be promoted.
+- **5.5:** 21 golden PRs (13 seeded, 8 clean, one injection), the set-level scorer, and both gates in `evals/review-pr/rubric.json`. **No recording yet:** it needs `OPENAI_API_KEY` (the config uses `provider = "openai"`, `model = "gpt-6.1-sol"`; owner decision 2026-11-16, OpenAI instead of Anthropic). Until it is recorded, `review-pr` is not in `evals/gate.sh` `ALL_CONFIGS` and cannot be promoted.
 - **6.1 mechanism:** `agent_capabilities`, the insert trigger, `promote.sh` granting `block` only when `evalscore -block-gate` passes, and `TestReviewBlocksOnlyWithCapability`. It is inactive: no capability rows exist.
 - **Deferred:** 5.1 (evidence workflow; until then evidence is empty and any cited evidence id is dropped). 5.2 (ingest `pull_request` and `workflow_run`; needs the owner to subscribe the App's webhooks). Until 5.2 lands, review jobs are enqueued by hand on `jobs_review`.
 
@@ -855,7 +855,7 @@ Commit this as its own step: `docs(w4.0): AGENTS.md invariants for v2`.
 - `worker/config/review-pr.toml` (prompt, model, rule sources, `review-policy`);
 - `worker/internal/review` (inputs at `base_sha`, findings schema, `ground()` validator, policy verdict, COMMENT only in this phase).
 
-**Model key:** `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in the worker environment (`.env` or `~/.config/tierbound/`; never in git) for live runs and `-record`. CI replays recordings and needs no key. `internal/llm` gains the provider interface here (V2_ACTIONS §11).
+**Model key:** `OPENAI_API_KEY` (review-pr uses `provider = "openai"`; `ANTHROPIC_API_KEY` works for a config with `provider = "anthropic"`) in the worker environment (`.env` or `~/.config/tierbound/`; never in git) for live runs and `-record`. CI replays recordings and needs no key. `internal/llm` gains the provider interface here (V2_ACTIONS §11).
 
 **Done when:**
 - `TestUngroundedFindingDropped` passes (three cases: a line outside the diff, a quote not verbatim, an unknown evidence id).
@@ -1008,7 +1008,7 @@ Commit this as its own step: `docs(w4.0): AGENTS.md invariants for v2`.
 
 #### Step 8.4 — Worker `pr-fix`
 
-**Model key:** `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, as in 5.3.
+**Model key:** `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY` with `provider = "anthropic"`), as in 5.3.
 
 **Files:** `worker/config/pr-fix.toml` (tier `code`), `worker/internal/fix` (base_sha pin, context gathering via the reader App, diff generation, pre-validation with `internal/patch` and the denylist), and `request_fix` (MCP) / the `tierbound:fix` label in `ingest`.
 

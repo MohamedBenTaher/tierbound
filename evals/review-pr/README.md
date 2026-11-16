@@ -23,17 +23,25 @@ Each reply is parsed and grounded exactly as the worker does before it is
 matched, so an ungrounded finding never counts as a hit, and grounding (kept
 / proposed) measures how much the model invents.
 
-## Recording (needs a provider key)
+## Recording (needs `OPENAI_API_KEY`)
+
+`config/review-pr.toml` uses `provider = "openai"`, `model = "gpt-6.1-sol"`
+(JSON mode on, reasoning budget 25k output tokens, 240 s per call, 429s
+retried with backoff). One recording is 21 calls, roughly $1–2 at
+gpt-6.1-sol prices; `gpt-6-luna` is the cheaper alternative (a new hash, so
+a new recording).
 
 ```
+# once: add the key to the repo's .env (OPENAI_API_KEY=sk-..., never committed)
 cd worker
-ANTHROPIC_API_KEY=... go run ./cmd/evalscore -record -config config/review-pr.toml ../evals/review-pr/golden
+set -a && . ../.env && set +a
+go run ./cmd/evalscore -record -config config/review-pr.toml ../evals/review-pr/golden
 AGENT_CONFIG=config/review-pr.toml ../evals/gate.sh
 go run ./cmd/evalscore -block-gate -config config/review-pr.toml ../evals/review-pr/golden
 ```
 
-No recording exists yet: none of the configured providers' keys were
-available when the set was built, and recordings are never fabricated.
+No recording exists yet: the key was not available when the set was built,
+and recordings are never fabricated.
 Until one is committed, the gate for `review-pr` fails ("no usable
 recording"), so the agent cannot be promoted, and it is not in
 `evals/gate.sh` `ALL_CONFIGS`. The scorer itself is covered by

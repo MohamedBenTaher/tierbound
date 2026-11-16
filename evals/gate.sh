@@ -10,8 +10,7 @@
 # agent <name> -> evals/<name>/golden, with rubric.json and results/ beside it.
 #
 # review-pr (evals/review-pr) is not in ALL_CONFIGS yet: it has no recording
-# until someone with ANTHROPIC_API_KEY (or OPENAI_API_KEY, provider "openai")
-# runs `go run ./cmd/evalscore -record -config config/review-pr.toml
+# until someone with OPENAI_API_KEY (its provider is "openai") runs `go run ./cmd/evalscore -record -config config/review-pr.toml
 # ../evals/review-pr/golden`. Until then `AGENT_CONFIG=config/review-pr.toml
 # evals/gate.sh` fails with "no usable recording", which also keeps the agent
 # from being promoted. Add it here in the commit that adds its recording.

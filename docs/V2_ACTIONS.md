@@ -377,11 +377,11 @@ These rows join the README guarantees table **when each phase ships**, each with
 
 The worker's `internal/llm` gains a provider interface (`llm.ForProvider`). The agent config names the provider in its own field, `provider = "groq" | "anthropic" | "openai"`, next to `model`, so a provider or model change is a `config_hash` change and re-runs the eval gate.
 
-**Deviation from the first draft (built in Phase 5):** the draft put the provider in the model name (`anthropic/<model>`). Groq's own model ids already contain a slash and a provider-looking prefix (`openai/gpt-oss-20b`, served by Groq), so a prefix scheme would misroute it. `provider` is hashed only when set, so the v1 configs (no `provider`, Groq by default) keep their hashes and recordings. Each provider reads only its own key; a missing key is an error naming the variable, never a fallback to another provider. Keys:
+**Deviation from the first draft (built in Phase 5):** the draft put the provider in the model name (`anthropic/<model>`). Groq's own model ids already contain a slash and a provider-looking prefix (`openai/gpt-oss-20b`, served by Groq), so a prefix scheme would misroute it. `provider` is hashed only when set, so the v1 configs (no `provider`, Groq by default) keep their hashes and recordings. Each provider reads only its own key; a missing key is an error naming the variable, never a fallback to another provider. With OpenAI, agents whose reply must be strict JSON (issue and review kinds, from `tool_grant`) use JSON mode, and every call reserves 25k output tokens for reasoning. Keys:
 
 | Key | Where it lives | Needed from |
 | --- | --- | --- |
 | `GROQ_API_KEY` | worker environment (today: `.env`, never committed) | v1 (triage) |
-| `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` | worker environment / `~/.config/tierbound/` while the worker runs on the owner's machine; Supabase Vault if the worker moves to hosted compute | step 5.3 (`review-pr` recordings), step 8.4 (`pr-fix`) |
+| `OPENAI_API_KEY` (owner decision 2026-11-16; `ANTHROPIC_API_KEY` for a `provider = "anthropic"` config) | worker environment (`.env`) / `~/.config/tierbound/` while the worker runs on the owner's machine; Supabase Vault if the worker moves to hosted compute | step 5.3 (`review-pr` recordings), step 8.4 (`pr-fix`) |
 
 CI never needs a model key: the eval gates replay committed recordings. Only recording new outputs (`-record`) does, and that runs locally.

@@ -43,8 +43,8 @@ read the files and never echo them.
    pooler port 6543), `EFFECTOR_WEBHOOK_SECRET`, `GITHUB_APP_ID`,
    `GITHUB_APP_INSTALLATION_ID` (181081697), `GITHUB_APP_PRIVATE_KEY` (one
    line, `\n` escapes). `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` come from
-   the platform. Worker-only keys (`GROQ_API_KEY`, `GITHUB_READ_TOKEN`) stay
-   local.
+   the platform. Worker-only keys (`GROQ_API_KEY`, `OPENAI_API_KEY`, `GITHUB_READ_TOKEN`)
+   stay local.
 5. `supabase config push --remote --yes`. `[remotes.hosted]` in
    `supabase/config.toml` keeps hosted's stricter auth defaults and turns off
    public sign-up; only the OAuth 2.1 server settings come from the shared
@@ -95,6 +95,13 @@ export WORKER_DATABASE_URL="postgresql://tierbound_worker.gdpzeenwivmluhkwjsuu:$
 export GROQ_API_KEY=...        # from console.groq.com, never committed
 go run ./cmd/worker -once -config config/triage-drafter.toml
 ```
+
+The `review-pr` agent (`config/review-pr.toml`, `provider = "openai"`) reads
+`OPENAI_API_KEY` instead (platform.openai.com, API keys; put it in `.env`,
+never committed). Each provider reads only its own key: with
+`OPENAI_API_KEY` unset the worker exits with `llm: OPENAI_API_KEY is not set
+(provider openai)` rather than falling back to Groq. Recording its golden set
+is in `evals/review-pr/README.md`.
 
 A job is dead-lettered after 3 failed reads (`propose.MaxAttempts`); open a
 new issue to get a fresh job.
