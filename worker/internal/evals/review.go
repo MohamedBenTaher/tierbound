@@ -143,6 +143,11 @@ func (f ReviewFixture) validate() error {
 		if !ctx.Diff[e.Path][e.Line] || len(e.RuleAny) == 0 {
 			return fmt.Errorf("expected finding %s:%d is not a diff line or has no rule_any", e.Path, e.Line)
 		}
+		for _, k := range e.RuleAny {
+			if _, ok := ctx.Canonical(k); !ok {
+				return fmt.Errorf("expected finding %s:%d: rule %s does not resolve in the rule snapshot", e.Path, e.Line, k)
+			}
+		}
 	}
 	return nil
 }
@@ -223,7 +228,9 @@ func (s *ReviewSet) scoreFixture(f ReviewFixture, out string, p review.Policy, c
 		r.Malformed = true
 		return r
 	}
-	kept, dropped := review.Ground(parsed, f.Input.Context())
+	rc := f.Input.Context()
+	kept, dropped := review.Ground(parsed, rc)
+	p = p.Resolve(rc)
 	for _, d := range dropped {
 		r.Dropped = append(r.Dropped, fmt.Sprintf("%s:%d %s", d.Finding.Path, d.Finding.Line, d.Reason))
 	}
@@ -231,7 +238,7 @@ func (s *ReviewSet) scoreFixture(f ReviewFixture, out string, p review.Policy, c
 	r.Verdict = review.Decide(kept, p, true).Event
 	used := make([]bool, len(f.Expect.Findings))
 	for _, k := range kept {
-		i := s.match(f.Expect.Findings, used, k)
+		i := s.match(f.Expect.Findings, used, k, rc)
 		r.Matched += b2i(i >= 0)
 		s.countBlocking(c, p, k, f.Expect.Findings, i)
 	}
@@ -257,10 +264,12 @@ func (s *ReviewSet) countBlocking(c *counts, p review.Policy, k review.Finding, 
 
 // match returns the first unused expected finding k matches, marking it
 // used, or -1.
-func (s *ReviewSet) match(exp []ExpectedFinding, used []bool, k review.Finding) int {
+// Rule keys compare canonically (kept findings are canonical already), so
+// an equivalent anchor spelling of the expected rule is a hit.
+func (s *ReviewSet) match(exp []ExpectedFinding, used []bool, k review.Finding, rc review.Context) int {
 	for i, e := range exp {
 		if used[i] || e.Path != k.Path || abs(e.Line-k.Line) > s.Rubric.LineTolerance ||
-			!slices.Contains(e.RuleAny, k.Rule.Key()) {
+			!slices.ContainsFunc(e.RuleAny, func(r string) bool { ck, _ := rc.Canonical(r); return ck == k.Rule.Key() }) {
 			continue
 		}
 		used[i] = true

@@ -40,8 +40,9 @@ func proposeReview(ctx context.Context, d Deps, msg pgmq.Message, job Job, agent
 	if err != nil {
 		return proposal{}, err
 	}
-	kept, dropped := review.Ground(out, in.Context())
-	policy := review.Policy{BlockingRules: d.Config.Review.BlockingRules, Status: d.Config.Review.Status}
+	rc := in.Context()
+	kept, dropped := review.Ground(out, rc)
+	policy := review.Policy{BlockingRules: d.Config.Review.BlockingRules, Status: d.Config.Review.Status}.Resolve(rc)
 	verdict := review.Decide(kept, policy, canBlock)
 	return proposal{
 		kind:    KindGitHubPRReview,

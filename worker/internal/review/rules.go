@@ -94,3 +94,27 @@ func numberedItem(sec string, n int) (string, bool) {
 	}
 	return strings.Join(out, "\n"), in
 }
+
+// canonicalAnchor resolves an anchor to one spelling per rule: the full
+// GitHub heading slug of its section, plus "-N" for a numbered item. So
+// "scripts-1" and "scripts-and-hooks-1" are the same rule, and the anchor in
+// a posted comment links to the real heading. Non-markdown anchors are kept
+// as written. ok is false when the anchor resolves to nothing.
+func canonicalAnchor(source, text, anchor string) (string, bool) {
+	if _, ok := span(source, text, anchor); !ok {
+		return "", false
+	}
+	if !strings.HasSuffix(source, ".md") {
+		return anchor, true
+	}
+	prefix, suffix := anchor, ""
+	if m := anchorIndex.FindStringSubmatch(anchor); m != nil {
+		prefix, suffix = m[1], "-"+m[2]
+	}
+	for _, l := range strings.Split(text, "\n") {
+		if headingMatches(l, prefix) {
+			return slug(strings.TrimLeft(l, "#")) + suffix, true
+		}
+	}
+	return "", false
+}

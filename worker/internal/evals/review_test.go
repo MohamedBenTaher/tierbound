@@ -153,3 +153,17 @@ func TestReviewScorerFailsTheRightGate(t *testing.T) {
 		}
 	}
 }
+
+// Regression (first gpt-6.1-sol recording, v02): the reply cited
+// docs/review-rules.md#scripts-and-hooks-1, the same rule as the expected
+// #scripts-1, and was scored a miss. Equivalent anchors now match.
+func TestReviewScorerMatchesEquivalentAnchor(t *testing.T) {
+	s, p := loadReviewSet(t)
+	out := oracle(t, s)
+	f := finding("scripts/release.sh", 6, "docs/review-rules.md#scripts-1", "major")
+	f.Rule.Anchor = "scripts-and-hooks-1"
+	out["v02-no-verify-in-script"] = reply(t, []review.Finding{f})
+	if rep := s.Score(out, p); rep.Recall != 1 || rep.Precision != 1 {
+		t.Fatalf("long anchor scored as a miss: %+v", rep)
+	}
+}

@@ -130,3 +130,26 @@ func TestPayloadShape(t *testing.T) {
 		t.Fatalf("payload: %v", p)
 	}
 }
+
+// Two spellings of one rule are one rule: kept findings carry the full
+// heading slug, and a policy written with the short anchor still blocks a
+// blocker cited with the long one (and vice versa).
+func TestAnchorSpellingsAreOneRule(t *testing.T) {
+	long := good()
+	long.Rule.Anchor = "invariants-never-break-these-1"
+	kept, dropped := Ground(Output{Findings: []Finding{good(), long}}, ctx())
+	if len(kept) != 2 || len(dropped) != 0 {
+		t.Fatalf("kept %v dropped %v", kept, dropped)
+	}
+	const want = "AGENTS.md#invariants-never-break-these-1"
+	if kept[0].Rule.Key() != want || kept[1].Rule.Key() != want {
+		t.Fatalf("canonical keys %s, %s; want both %s", kept[0].Rule.Key(), kept[1].Rule.Key(), want)
+	}
+	p := Policy{BlockingRules: []string{"AGENTS.md#invariants-1", "AGENTS.md#nope-9"}, Status: true}.Resolve(ctx())
+	if len(p.BlockingRules) != 1 || Decide(kept[1:], p, true).Event != "REQUEST_CHANGES" {
+		t.Fatalf("resolved policy %v did not block the long-anchor blocker", p.BlockingRules)
+	}
+	if got, ok := ctx().Canonical("AGENTS.md#repo-layout"); !ok || got != "AGENTS.md#repo-layout" {
+		t.Fatalf("section anchor: %q %v", got, ok)
+	}
+}

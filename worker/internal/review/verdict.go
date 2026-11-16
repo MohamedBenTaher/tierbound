@@ -40,6 +40,22 @@ func Decide(kept []Finding, p Policy, canBlock bool) Verdict {
 	return v
 }
 
+// Resolve rewrites BlockingRules to the canonical keys Ground gives kept
+// findings, using the rule files of this review. Without it a blocker cited
+// by an equivalent anchor spelling would silently not block. A blocking rule
+// that does not resolve (its file is missing at base) is dropped: it can
+// match nothing.
+func (p Policy) Resolve(c Context) Policy {
+	out := p
+	out.BlockingRules = nil
+	for _, k := range p.BlockingRules {
+		if ck, ok := c.Canonical(k); ok {
+			out.BlockingRules = append(out.BlockingRules, ck)
+		}
+	}
+	return out
+}
+
 // Blocks reports whether a grounded finding may request changes under this
 // policy: severity blocker and a blocking rule.
 func (p Policy) Blocks(f Finding) bool {

@@ -33,9 +33,27 @@ func Ground(out Output, c Context) (kept []Finding, dropped []Dropped) {
 			dropped = append(dropped, Dropped{Finding: f, Reason: reason})
 			continue
 		}
+		f.Rule.Anchor, _ = canonicalAnchor(f.Rule.Source, c.Rules[f.Rule.Source], f.Rule.Anchor)
 		kept = append(kept, f)
 	}
 	return kept, dropped
+}
+
+// Canonical resolves a rule key ("AGENTS.md#invariants-1") to the spelling
+// Ground gives kept findings ("AGENTS.md#invariants-never-break-these-1").
+// ok is false if the source is not a rule file here or the anchor does not
+// resolve.
+func (c Context) Canonical(key string) (string, bool) {
+	i := strings.LastIndex(key, "#")
+	if i < 0 {
+		return "", false
+	}
+	text, ok := c.Rules[key[:i]]
+	if !ok {
+		return "", false
+	}
+	anchor, ok := canonicalAnchor(key[:i], text, key[i+1:])
+	return key[:i] + "#" + anchor, ok
 }
 
 func (c Context) refuse(f Finding) string {
