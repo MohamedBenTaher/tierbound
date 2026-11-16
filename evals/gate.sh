@@ -9,11 +9,9 @@
 # Golden sets: triage-drafter -> evals/golden (the v1 layout); any other
 # agent <name> -> evals/<name>/golden, with rubric.json and results/ beside it.
 #
-# review-pr (evals/review-pr) is not in ALL_CONFIGS yet: it has no recording
-# until someone with OPENAI_API_KEY (its provider is "openai") runs `go run ./cmd/evalscore -record -config config/review-pr.toml
-# ../evals/review-pr/golden`. Until then `AGENT_CONFIG=config/review-pr.toml
-# evals/gate.sh` fails with "no usable recording", which also keeps the agent
-# from being promoted. Add it here in the commit that adds its recording.
+# review-pr (evals/review-pr, set-level scorer) is gated on its recording
+# for config 53af9650 (gpt-6.1-sol, recorded 2026-11-16). A review-pr config
+# change needs a new recording made with OPENAI_API_KEY.
 #
 # Optional live check: with EVAL_LIVE=1 and the config's provider key set,
 # also drafts the golden set with the model right now and scores that
@@ -22,7 +20,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../worker"
 
-ALL_CONFIGS=(config/triage-drafter.toml config/issue-drafter.toml)
+ALL_CONFIGS=(config/triage-drafter.toml config/issue-drafter.toml config/review-pr.toml)
 
 golden_for() {
   local name

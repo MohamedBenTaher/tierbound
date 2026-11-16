@@ -8,12 +8,15 @@
 #   AGENT_CONFIG=config/issue-drafter.toml evals/promote.sh            hosted (asks before writing)
 #   PROMOTE_TARGET=local AGENT_CONFIG=config/issue-drafter.toml evals/promote.sh   local stack
 #
-# Review agents (tool_grant github.propose_review) also get the `block`
-# capability for this hash, but only if the stricter block gate passes
-# (evalscore -block-gate: blocker precision >= 0.90, zero false blocks,
-# blocker recall >= 0.60). Otherwise no capability row is written and the
-# insert trigger refuses REQUEST_CHANGES. A capability for an older hash never
-# carries over: it is keyed to granted_hash.
+# Review agents (tool_grant github.propose_review) can also get the `block`
+# capability for this hash, but only when BOTH hold: the operator asks for
+# it (PROMOTE_BLOCK=1) and the stricter block gate passes (evalscore
+# -block-gate: blocker precision >= 0.90, zero false blocks, blocker recall
+# >= 0.60). A plain promote never grants block: passing the golden set is not
+# enough evidence on its own (see evals/review-pr/README.md, held-out set).
+# Without a capability row the insert trigger refuses REQUEST_CHANGES. A
+# capability for an older hash never carries over: it is keyed to
+# granted_hash.
 #
 # An agent with no row yet is registered under the owner of triage-drafter
 # (single-owner project: the first registered agent's owner). Run from the
@@ -41,7 +44,9 @@ on conflict (owner, name) do update
   set config_hash = excluded.config_hash, evals_passed_hash = excluded.evals_passed_hash
 returning id, name, tier, config_hash = evals_passed_hash as active"
 
-if grep -q 'github.propose_review' "$root/worker/$config"; then
+if grep -q 'github.propose_review' "$root/worker/$config" && [[ "${PROMOTE_BLOCK:-0}" != "1" ]]; then
+  echo "promote: $name stays comment-only (block not requested; set PROMOTE_BLOCK=1 to ask for it)"
+elif grep -q 'github.propose_review' "$root/worker/$config"; then
   golden="$root/evals/$name/golden"
   if (cd "$root/worker" && go run ./cmd/evalscore -block-gate -config "$config" "$golden" >/dev/null); then
     echo "promote: block gate passed; granting block for $hash"

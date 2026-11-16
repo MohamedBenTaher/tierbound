@@ -40,11 +40,22 @@ AGENT_CONFIG=config/review-pr.toml ../evals/gate.sh
 go run ./cmd/evalscore -block-gate -config config/review-pr.toml ../evals/review-pr/golden
 ```
 
-No recording exists yet: the key was not available when the set was built,
-and recordings are never fabricated.
-Until one is committed, the gate for `review-pr` fails ("no usable
-recording"), so the agent cannot be promoted, and it is not in
-`evals/gate.sh` `ALL_CONFIGS`. The scorer itself is covered by
+**Recorded:** config `53af9650` (gpt-6.1-sol, 2026-11-16) passes both
+gates. Precision, recall, grounding, blocker precision and blocker recall
+are all 1.000, with 0 false blocks, 0 missed blocks and 0 malformed replies.
+It is replayed in CI via `evals/gate.sh` `ALL_CONFIGS`.
+
+**Blocking stays off.** That score is optimistic. The fixtures, rules and
+prompt were revised after looking at the first run's misses (see History),
+so this set has been tuned against. Before anyone grants `block`
+(`PROMOTE_BLOCK=1 evals/promote.sh`), the config should clear the block bar
+on a held-out set of PRs the prompt and rules were never adjusted for, such
+as real tierbound PRs reviewed after promotion. Until then review-pr is
+promoted comment-only: it proposes COMMENT reviews with an advisory
+`success` status, and every review still needs a human approval. A plain
+`evals/promote.sh` never grants `block`.
+
+The scorer itself is covered by
 `worker/internal/evals/review_test.go`: a perfect reviewer clears both
 gates; a silent one, an inventive one, one that follows the injection, and
 missing or malformed replies each fail the gate they should.
@@ -83,3 +94,7 @@ blocks. Not committed. Diagnosis of each miss:
 
 The thresholds are unchanged. Labels changed only where the input was wrong
 (c06, v04, v08), or where a rule was removed or renumbered (v03, v04, v10).
+
+**2026-11-16, second recording (gpt-6.1-sol, config `53af9650`), PASSED:**
+every metric 1.000, with 0 false, missed or malformed. Committed, and in
+`ALL_CONFIGS`. Block stays off pending a held-out set (above).
