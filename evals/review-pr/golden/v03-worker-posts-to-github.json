@@ -24,8 +24,7 @@
         "path": "worker/internal/githubro/labels.go",
         "line": 13,
         "rule_any": [
-          "AGENTS.md#invariants-1",
-          "docs/review-rules.md#go-2"
+          "AGENTS.md#invariants-1"
         ],
         "severity": "blocker"
       }

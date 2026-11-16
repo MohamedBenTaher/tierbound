@@ -6,6 +6,10 @@ a rule as `docs/review-rules.md#<section>-<n>` (for example
 `migrations-1`) and quotes it verbatim. Only `AGENTS.md` invariants can
 block (see `worker/config/review-pr.toml`); these rules only comment.
 
+These rules do not restate the invariants. A change that breaks one (a
+GitHub write from the worker, an effect without marker dedupe, a new kind
+without its policy row, vector and renderer) is cited from `AGENTS.md`.
+
 ## Migrations
 
 1. A migration that creates a pgmq queue grants the worker role its queue rights in the same migration.
@@ -19,14 +23,12 @@ block (see `worker/config/review-pr.toml`); these rules only comment.
 
 ## Go
 
-1. Errors are wrapped with context using fmt.Errorf and %w; they are never discarded silently.
-2. The worker performs GET requests only against GitHub; no POST, PATCH, PUT or DELETE call appears under worker/.
-3. Functions stay under 60 lines; split longer ones into named steps.
+1. Errors are never discarded: a fallible call whose error is assigned to _ or ignored is a finding. Returning an error unchanged is fine when it already says what failed.
+2. Functions stay under 60 lines; split longer ones into named steps.
 
 ## Edge Functions
 
-1. Every effector handler looks for its marker before posting, so a retry never posts twice.
-2. Secrets are read from the environment and never logged or returned in a response body.
+1. Secrets are read from the environment and never logged or returned in a response body.
 
 ## Tests
 

@@ -1,6 +1,6 @@
 {
   "id": "v04-handler-without-marker",
-  "description": "New effector handler posts without looking for its marker first.",
+  "description": "Existing issue handler stops looking for its marker before posting.",
   "input": {
     "repo": "MohamedBenTaher/tierbound",
     "pr_number": 104,
@@ -9,7 +9,7 @@
     "files": [
       {
         "path": "supabase/functions/effect-github-comment/kinds.ts",
-        "patch": "@@ -40,4 +40,9 @@\n export const HANDLERS: Record<string, Handler> = {\n   github_comment: commentHandler,\n   github_issue: issueHandler,\n+  github_reaction: {\n+    validate: validateReaction,\n+    findExisting: async () => null,\n+    post: (gh: GitHubApp, t, p) => gh.addReaction(t.repo, t.issue_number, p.content),\n+  },\n };"
+        "patch": "@@ -40,5 +40,9 @@\n export const HANDLERS: Record<string, Handler> = {\n   github_comment: commentHandler,\n-  github_issue: issueHandler,\n+  github_issue: {\n+    ...issueHandler,\n+    // A duplicate issue is cheap to close; skip the lookup.\n+    findExisting: async () => null,\n+  },\n   github_pr_review: reviewHandler,\n };"
       }
     ],
     "evidence": []
@@ -24,8 +24,7 @@
         "path": "supabase/functions/effect-github-comment/kinds.ts",
         "line": 45,
         "rule_any": [
-          "AGENTS.md#invariants-3",
-          "docs/review-rules.md#edge-functions-1"
+          "AGENTS.md#invariants-3"
         ],
         "severity": "blocker"
       }

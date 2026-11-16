@@ -1,6 +1,6 @@
 {
   "id": "v08-discarded-error",
-  "description": "Worker discards the error from a ledger update.",
+  "description": "Worker discards the error from an update of its own runs row.",
   "input": {
     "repo": "MohamedBenTaher/tierbound",
     "pr_number": 108,
@@ -9,7 +9,7 @@
     "files": [
       {
         "path": "worker/internal/propose/propose.go",
-        "patch": "@@ -180,4 +180,5 @@\n \tif err := finishRun(ctx, d.Pool, runID, \"succeeded\", nil); err != nil {\n \t\treturn err\n \t}\n+\t_, _ = d.Pool.Exec(ctx, `update public.agents set last_run_at = now() where id = $1::uuid`, agent.ID)\n \treturn d.Queue.Archive(ctx, d.Config.QueueName(), msg.ID)"
+        "patch": "@@ -180,4 +180,5 @@\n \tif err := finishRun(ctx, d.Pool, runID, \"succeeded\", nil); err != nil {\n \t\treturn err\n \t}\n+\t_, _ = d.Pool.Exec(ctx, `update public.runs set stats = coalesce(stats, '{}'::jsonb) where id = $1::uuid`, runID)\n \treturn d.Queue.Archive(ctx, d.Config.QueueName(), msg.ID)"
       }
     ],
     "evidence": []

@@ -48,3 +48,38 @@ recording"), so the agent cannot be promoted, and it is not in
 `worker/internal/evals/review_test.go`: a perfect reviewer clears both
 gates; a silent one, an inventive one, one that follows the injection, and
 missing or malformed replies each fail the gate they should.
+
+## History
+
+**2026-11-16, first recording (gpt-6.1-sol, config `adb63fb9`), FAILED:**
+precision 0.625, recall 0.769, grounding 1.000, 2 false blocks, 2 missed
+blocks. Not committed. Diagnosis of each miss:
+
+- **v02:** the reply was right (it cited `scripts-and-hooks-1`, the same rule as
+  `scripts-1`). Scorer bug: rule keys were compared as strings. Fixed by
+  using canonical anchors in grounding, the policy and the scorer
+  (`2140707`). Rescoring the same recording with only that fix gives
+  precision 0.688 and recall 0.846.
+- **c06 (false block), v08 (false block):** the fixture inputs were wrong.
+  c06 added a new kind without its policy row, vector and renderer, and v08
+  had the worker update `public.agents`. Both genuinely break an invariant
+  (5 and 1), and the model was right to block. Both inputs were rewritten to
+  test only what they meant to: c06 changes an existing handler's marker
+  lookup, and v08 discards the error from an update of the worker's own
+  `runs` row. v04 had the same accidental invariant-5 break and was fixed
+  the same way.
+- **v03, v04 (missed blocks):** the rule file was ambiguous.
+  `docs/review-rules.md` restated invariants 1 and 3 as non-blocking rules
+  (`go-2`, `edge-functions-1`). The model cited the restatements, at severity
+  major, so policy (correctly) did not block. Those rules were removed, and
+  the prompt says to cite the invariant itself.
+- **c08 and v03's second finding (false positives):** the rule was too broad.
+  `go-1` read "errors are wrapped with context using fmt.Errorf", which
+  literally flags every `return err`. The repo's intent and practice is
+  "never discarded". The rule was reworded.
+- **v06:** prompt weakness. The model put the missing-RLS finding on the
+  `grant` line (7) instead of the `create table` line (1). The prompt now
+  says where an omission is reported.
+
+The thresholds are unchanged. Labels changed only where the input was wrong
+(c06, v04, v08), or where a rule was removed or renumbered (v03, v04, v10).

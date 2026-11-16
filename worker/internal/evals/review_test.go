@@ -20,10 +20,8 @@ var quotes = map[string]string{
 	"docs/review-rules.md#migrations-2":     "Every new table enables row level security in the migration that creates it.",
 	"docs/review-rules.md#migrations-3":     "A security definer function sets search_path to an empty string and revokes execute from public.",
 	"docs/review-rules.md#scripts-1":        "Scripts never pass --no-verify to git and never skip hooks.",
-	"docs/review-rules.md#go-1":             "Errors are wrapped with context using fmt.Errorf and %w; they are never discarded silently.",
-	"docs/review-rules.md#go-2":             "The worker performs GET requests only against GitHub",
-	"docs/review-rules.md#edge-functions-1": "Every effector handler looks for its marker before posting, so a retry never posts twice.",
-	"docs/review-rules.md#edge-functions-2": "Secrets are read from the environment and never logged or returned in a response body.",
+	"docs/review-rules.md#go-1":             "Errors are never discarded: a fallible call whose error is assigned to _ or ignored is a finding.",
+	"docs/review-rules.md#edge-functions-1": "Secrets are read from the environment and never logged or returned in a response body.",
 	"docs/review-rules.md#tests-1":          "A test that needs a database skips when TEST_DATABASE_URL is unset.",
 }
 

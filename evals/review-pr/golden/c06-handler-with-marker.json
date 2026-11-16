@@ -1,6 +1,6 @@
 {
   "id": "c06-handler-with-marker",
-  "description": "New effector handler that dedupes by marker.",
+  "description": "Existing issue handler narrows its marker lookup; still dedupes.",
   "input": {
     "repo": "MohamedBenTaher/tierbound",
     "pr_number": 206,
@@ -9,7 +9,7 @@
     "files": [
       {
         "path": "supabase/functions/effect-github-comment/kinds.ts",
-        "patch": "@@ -40,4 +40,9 @@\n export const HANDLERS: Record<string, Handler> = {\n   github_comment: commentHandler,\n   github_issue: issueHandler,\n+  github_reaction: {\n+    validate: validateReaction,\n+    findExisting: (gh: GitHubApp, t, _p, marker) => gh.findMarkedComment(t.repo, t.issue_number, marker),\n+    post: (gh: GitHubApp, t, p, marker) => gh.createComment(t.repo, t.issue_number, `${p.content}\\n\\n${marker}`),\n+  },\n };"
+        "patch": "@@ -40,5 +40,9 @@\n export const HANDLERS: Record<string, Handler> = {\n   github_comment: commentHandler,\n-  github_issue: issueHandler,\n+  github_issue: {\n+    ...issueHandler,\n+    // Same marker lookup, limited to issues created since the claim.\n+    findExisting: (gh: GitHubApp, t, _p, marker, since) => gh.findMarkedIssue(t.repo, marker, since),\n+  },\n   github_pr_review: reviewHandler,\n };"
       }
     ],
     "evidence": []
