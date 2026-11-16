@@ -118,7 +118,7 @@ func TestReviewPolicyIsHashed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.Grants(GrantProposeReview) || len(c.Review.RuleSources) == 0 || c.Provider != "anthropic" {
+	if !c.Grants(GrantProposeReview) || len(c.Review.RuleSources) == 0 || c.Provider != "openai" {
 		t.Fatalf("review-pr config: %+v", c)
 	}
 	h0, _ := c.Hash()

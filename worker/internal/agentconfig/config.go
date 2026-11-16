@@ -150,6 +150,12 @@ func (c Config) Grants(grant string) bool {
 	return slices.Contains(c.ToolGrant, grant)
 }
 
+// StrictJSON reports whether the agent's reply must be one JSON object (the
+// issue and review kinds). Derived from tool_grant, so it is hashed.
+func (c Config) StrictJSON() bool {
+	return c.Grants(GrantProposeIssue) || c.Grants(GrantProposeReview)
+}
+
 func sorted(in []string) []string {
 	out := slices.Clone(in)
 	slices.Sort(out)

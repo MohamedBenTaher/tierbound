@@ -58,7 +58,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	drafter, err := llm.ForProvider(cfg.Provider, cfg.Model, os.Getenv)
+	drafter, err := llm.ForProvider(cfg.Provider, cfg.Model, os.Getenv, llm.Options{JSON: cfg.StrictJSON()})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "worker:", err)
 		os.Exit(1)

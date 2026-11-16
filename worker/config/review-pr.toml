@@ -11,8 +11,12 @@
 
 name = "review-pr"
 tier = "draft"
-provider = "anthropic" # ANTHROPIC_API_KEY; "openai" + OPENAI_API_KEY also works
-model = "claude-sonnet-5-5"
+# OPENAI_API_KEY from the worker environment (../.env). gpt-6.1-sol: OpenAI's
+# coding-strong reasoning model at mid price ($2 / $10 per 1M tokens);
+# cheaper alternative: gpt-6-luna ($0.10 / $0.50). Changing either line
+# changes config_hash and needs a new recording.
+provider = "openai"
+model = "gpt-6.1-sol"
 prompt_path = "prompts/review-pr.md"
 
 # github.propose_review: this agent proposes github_pr_review only.

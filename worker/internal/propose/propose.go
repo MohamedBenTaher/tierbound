@@ -39,7 +39,7 @@ const (
 	queueDead = "jobs_dead"
 
 	readVTSeconds = 60
-	slowVTSeconds = 120
+	slowVTSeconds = 300
 )
 
 // Job is the queue message ingest enqueues (plan step 1.3). Review jobs

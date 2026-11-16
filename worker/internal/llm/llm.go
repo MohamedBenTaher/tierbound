@@ -1,5 +1,6 @@
-// Package llm drafts issue comments through an OpenAI-compatible chat API
-// (Groq in v1). It is pure transport: prompt construction stays in propose.
+// Package llm drafts through a model provider: an OpenAI-compatible chat API
+// (Groq in v1, OpenAI) or Anthropic's Messages API. It is pure transport:
+// prompt construction stays in propose.
 package llm
 
 import (
@@ -19,6 +20,11 @@ type Client struct {
 	baseURL string
 	model   string
 	http    *http.Client
+	// jsonObject sets response_format {"type":"json_object"}: the reply is
+	// one JSON object (OpenAI JSON mode).
+	jsonObject bool
+	// maxCompletionTokens caps output, reasoning tokens included; 0 omits it.
+	maxCompletionTokens int
 }
 
 // New returns a chat client for model. Empty baseURL means
@@ -43,6 +49,12 @@ func (c *Client) DraftComment(ctx context.Context, systemPrompt, userMessage str
 			{"role": "system", "content": systemPrompt},
 			{"role": "user", "content": userMessage},
 		},
+	}
+	if c.jsonObject {
+		payload["response_format"] = map[string]string{"type": "json_object"}
+	}
+	if c.maxCompletionTokens > 0 {
+		payload["max_completion_tokens"] = c.maxCompletionTokens
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -69,13 +81,18 @@ func (c *Client) DraftComment(ctx context.Context, systemPrompt, userMessage str
 			Message struct {
 				Content string `json:"content"`
 			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return "", fmt.Errorf("llm: decode response: %w", err)
 	}
-	if len(out.Choices) == 0 || out.Choices[0].Message.Content == "" {
+	if len(out.Choices) == 0 {
 		return "", fmt.Errorf("llm: empty completion")
+	}
+	if out.Choices[0].Message.Content == "" {
+		// "length": reasoning used the whole max_completion_tokens budget.
+		return "", fmt.Errorf("llm: empty completion (finish_reason %q)", out.Choices[0].FinishReason)
 	}
 	return out.Choices[0].Message.Content, nil
 }

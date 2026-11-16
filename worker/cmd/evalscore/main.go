@@ -118,7 +118,7 @@ func run() error {
 }
 
 func draftAll(cfg agentconfig.Config, hash string, set golden) (evals.Recording, error) {
-	client, err := llm.ForProvider(cfg.Provider, cfg.Model, os.Getenv)
+	client, err := llm.ForProvider(cfg.Provider, cfg.Model, os.Getenv, llm.Options{JSON: cfg.StrictJSON()})
 	if err != nil {
 		return evals.Recording{}, err
 	}
@@ -141,17 +141,25 @@ func draftAll(cfg agentconfig.Config, hash string, set golden) (evals.Recording,
 // draftWithBackoff retries rate-limited (HTTP 429) calls a few times: a
 // golden set is a burst of requests, and free model tiers cap tokens per
 // minute. Any other error returns at once.
+// Applies to every provider (Groq, OpenAI and Anthropic all answer 429).
 func draftWithBackoff(client llm.Completer, prompt, msg string) (string, error) {
 	for attempt := 1; ; attempt++ {
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), draftTimeout)
 		out, err := client.DraftComment(ctx, prompt, msg)
 		cancel()
 		if err == nil || attempt == 6 || !strings.Contains(err.Error(), "status 429") {
 			return out, err
 		}
-		time.Sleep(time.Duration(attempt) * 10 * time.Second)
+		time.Sleep(time.Duration(attempt) * backoffUnit)
 	}
 }
+
+// draftTimeout bounds one model call, above the slowest client timeout
+// (OpenAI reasoning, 240 s). backoffUnit is the linear 429 backoff step.
+var (
+	draftTimeout = 300 * time.Second
+	backoffUnit  = 10 * time.Second
+)
 
 func printReport(rep evals.Report) {
 	for _, r := range rep.Results {
