@@ -101,7 +101,7 @@ func run() error {
 	return nil
 }
 
-// resolveConfigPath prefers the flag, then the env, then the shipped file
+// resolveConfigPath prefers the flag, then the env, then the shipped files in worker/ and config/.
 // The two candidates cover running from worker/ (go run) and from the repo
 // root (scripts, pre-commit).
 func resolveConfigPath(flagVal string) string {
