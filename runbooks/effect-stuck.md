@@ -1,6 +1,6 @@
-# Effect stuck (approved, no comment)
+# Effect stuck (approved, nothing on GitHub)
 
-An action was approved but no comment appeared. SPEC section 7 failure mode;
+An action was approved but no comment, issue or review appeared. SPEC section 7 failure mode;
 drilled in `docs/postmortems/postmortem-001.md`.
 
 ## 1. Look
@@ -34,9 +34,16 @@ an existing comment instead of posting again.
 
 - `last_error` / response body mentions GitHub 5xx or timeout: check
   <https://www.githubstatus.com>; retry once it is green.
+- `GitHub POST ... -> 403` in `last_error` (GitHub's body says `Resource not
+  accessible by integration`): the App lacks the permission for this kind,
+  for example Pull requests: write or Commit statuses: write for a
+  `github_pr_review`. Add it (table in `runbooks/hosted-setup.md` step 7),
+  accept it on the installation, then retry. Nothing was posted, so the retry
+  uses the same approval and hash. Covered by
+  `TestReviewForbiddenThenRetryAfterPermissionFixPostsOnce`.
 - 401 from GitHub: the App key or installation changed; re-run
   `runbooks/hosted-setup.md` step 4 (Edge secrets).
-- `refused` (403): the stored action no longer matches the approved hash. Do
+- `refused` (the effector's own 403 outcome, not GitHub's): the stored action no longer matches the approved hash. Do
   **not** retry; the action was tampered with or retargeted after approval.
 - No `net._http_response` row: check the Vault entries (`tierbound_functions_url`,
   `tierbound_effector_webhook_secret`) and the `effect-github-comment` logs.
@@ -56,11 +63,12 @@ curl -s -X POST https://gdpzeenwivmluhkwjsuu.supabase.co/functions/v1/effect-git
 
 | Response | Next |
 | --- | --- |
-| 200 `posted` / `recorded_existing` / `already_posted` | done; check one comment on the issue |
+| 200 `posted` / `recorded_existing` / `already_posted` | done; check one comment, issue or review on GitHub |
 | 409 `busy` | a live claim; wait `EFFECT_LEASE_SECONDS` and retry |
 | 409 `fence_lost` | another invocation took over; re-check step 1 |
 | 403 `refused` | stop; see step 2 |
-| 502 `failed` | GitHub still failing; retry later |
+| 502 `failed` | GitHub still failing (read `error`: a 403 means the permission is still missing or not accepted); retry later |
+| 409 `stale` | a review whose PR head moved since approval; terminal, nothing posted |
 
 ## 4. Verify
 

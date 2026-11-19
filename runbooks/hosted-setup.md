@@ -55,9 +55,34 @@ read the files and never echo them.
    - <https://github.com/settings/apps/tierbound-mbt>: **Active**, URL = the
      ingest URL, any placeholder secret; then set the real one with
      `PATCH /app/hook/config` using an App JWT.
-   - <https://github.com/settings/apps/tierbound-mbt/permissions>: subscribe
-     to **Issues**; accept the new permissions on the installation.
+   - <https://github.com/settings/apps/tierbound-mbt/permissions>: set the
+     permissions and events below, save, then **accept the new permissions on
+     the installation** (github.com/settings/installations → tierbound-mbt →
+     review request). Until accepted, GitHub answers the effector with
+     `403 Resource not accessible by integration`.
    - Installation scope: limit to `MohamedBenTaher/tierbound`.
+
+   | App permission | Why | Needed by |
+   | --- | --- | --- |
+   | Metadata: read | every API call | all kinds |
+   | Issues: write | post comments, create issues | `github_comment`, `github_issue` |
+   | Pull requests: write | post the review (`POST /pulls/{n}/reviews`) | `github_pr_review` |
+   | Commit statuses: write | the advisory `tierbound/review` status on the head | `github_pr_review` |
+   | Pull requests: read | worker reads the PR and its files | review-pr worker (read token) |
+   | Contents: read | worker reads `AGENTS.md` / `docs/review-rules.md` at `base_sha` | review-pr worker (read token) |
+   | Issues: read | worker reads the issue | triage, issue-drafter workers (read token) |
+
+   Write permissions imply read. Subscribe to events: **Issues** and **Pull
+   request**. `ingest` routes them (plan step 5.2, `supabase/functions/ingest/route.ts`):
+
+   | Delivery | Queue (agent) | Skipped |
+   | --- | --- | --- |
+   | `issues.opened` | `jobs` (triage-drafter) | never |
+   | `issues.opened` | `jobs_issue` (issue-drafter) | bot authors; tierbound's own issues (marker) |
+   | `pull_request` opened / synchronize / reopened / ready_for_review | `jobs_review` (review-pr) | drafts, bot authors, forks, closed PRs; a head already queued |
+   | `ping`, anything else | none (200) | |
+
+   A redelivered `X-GitHub-Delivery` enqueues nothing.
 8. Approver account: sign-up is off, so create it with the Admin API
    (service role; password in `~/.config/tierbound/hosted-approver-password`)
    and own the `triage-drafter` agent with it (same insert as `seed.sql`,
@@ -82,14 +107,17 @@ Served by GitHub Pages (`.github/workflows/consent-pages.yml`, runs on changes t
 
 `GITHUB_READ_TOKEN` must be able to read the (private) dogfood repo. The
 simplest least-privilege token is an App installation token scoped down to
-Issues **read** on `tierbound` (valid 1 h); `GROQ_API_KEY` must be a real key.
+read on `tierbound` (valid 1 h): Issues read for triage and issue-drafter,
+plus Pull requests and Contents read for review-pr. GitHub refuses to mint a
+permission the App does not have, so add those to the App first (table
+above). `GROQ_API_KEY` must be a real key.
 
 ```
 cd worker
 export GITHUB_READ_TOKEN=$(curl -s -X POST \
   -H "Authorization: Bearer $(~/.config/tierbound/app-jwt.sh)" \
   https://api.github.com/app/installations/181081697/access_tokens \
-  -d '{"repositories":["tierbound"],"permissions":{"issues":"read"}}' \
+  -d '{"repositories":["tierbound"],"permissions":{"issues":"read","pull_requests":"read","contents":"read"}}' \
   | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')
 export WORKER_DATABASE_URL="postgresql://tierbound_worker.gdpzeenwivmluhkwjsuu:$(cat ~/.config/tierbound/worker-db-password)@aws-0-eu-west-3.pooler.supabase.com:5432/postgres"
 export GROQ_API_KEY=...        # from console.groq.com, never committed
@@ -102,6 +130,11 @@ never committed). Each provider reads only its own key: with
 `OPENAI_API_KEY` unset the worker exits with `llm: OPENAI_API_KEY is not set
 (provider openai)` rather than falling back to Groq. Recording its golden set
 is in `evals/review-pr/README.md`.
+
+Run one long-lived worker per agent (drop `-once`): `triage-drafter.toml`
+reads `jobs`, `issue-drafter.toml` `jobs_issue`, `review-pr.toml`
+`jobs_review`. Restart them after a deploy that changes their config or after
+the token above expires (a 401 from GitHub in the worker log).
 
 A job is dead-lettered after 3 failed reads (`propose.MaxAttempts`); open a
 new issue to get a fresh job.

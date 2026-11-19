@@ -51,6 +51,7 @@ Tiers are ordered by blast radius. An agent's tier caps which kinds it may propo
 | Metadata: read | everything | v1 |
 | Pull requests: write | reviews (`github_pr_review`), draft PRs (`github_pr_fix`) | 5, 8 |
 | Commit statuses: write | advisory `tierbound/review` status | 5 |
+| Contents: read | review-pr reads the rules at `base_sha` (read token) | 5 |
 | Actions: read | evidence artifacts | 5 |
 | Repository security advisories: write | `github_security_advisory` | 7 |
 | Contents: write | branches and commits for `github_pr_fix` | 8 |

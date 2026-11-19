@@ -818,7 +818,7 @@ Commit this as its own step: `docs(w4.0): AGENTS.md invariants for v2`.
 
 ### Phase 5 — Weekend 5: `review-pr` (non-blocking)
 
-**Status (2026-11-14).** Built: 5.3, 5.4, 5.5 and the 6.1 mechanism; deferred: 5.1 and 5.2. Notes against the steps below:
+**Status (2026-11-14, updated 2026-11-19).** Built: 5.2 (without the evidence join), 5.3, 5.4, 5.5 and the 6.1 mechanism; deferred: 5.1. Notes against the steps below:
 - **5.3:** done as written, plus the provider interface (V2_ACTIONS §11; `provider` is its own config field). `review-policy` is the `[review]` table in `worker/config/review-pr.toml`. Rules come from `AGENTS.md` and the new `docs/review-rules.md`, read at `base_sha`. Anchors are heading-slug prefixes, with `-N` for the N-th numbered item. The grounding check refuses ten cases, and `runs.stats` records the dropped findings and why. The queue is `jobs_review`; the worker calls `tierbound_can_block()` but cannot read capabilities.
 - **5.4:** the handler lives in `effect-github-comment/review.ts`. The function keeps its v1 name so the hosted webhook URL does not move. There is no `effects.progress` column: on takeover, the marked review is found and only the status is reposted (statuses are idempotent). A moved head marks the action `stale` and writes nothing. The MCP preview shows the verdict line (naming the blocking rule), the findings with quoted rules, the comments as posted, and the head sha.
 - **5.5:** 21 golden PRs (13 seeded, 8 clean, one injection), the set-level scorer, and both gates in `evals/review-pr/rubric.json`. It uses `provider = "openai"`, `model = "gpt-6.1-sol"` (owner decision 2026-11-16: OpenAI instead of Anthropic).
@@ -826,7 +826,9 @@ Commit this as its own step: `docs(w4.0): AGENTS.md invariants for v2`.
   - **Recording `53af9650`:** passes both gates at 1.000 and is in `ALL_CONFIGS`.
   - **Not yet promoted on hosted.
 - **6.1 mechanism:** `agent_capabilities`, the insert trigger, `promote.sh` granting `block` only with `PROMOTE_BLOCK=1` and a passing `evalscore -block-gate`, and `TestReviewBlocksOnlyWithCapability`. **Block stays off:** the golden set was revised after the first run, so its block-gate pass is optimistic. Granting `block` waits for a held-out set of unseen PRs (for example, real tierbound PRs reviewed comment-only after promotion). No capability rows exist.
-- **Deferred:** 5.1 (evidence workflow; until then evidence is empty and any cited evidence id is dropped). 5.2 (ingest `pull_request` and `workflow_run`; needs the owner to subscribe the App's webhooks). Until 5.2 lands, review jobs are enqueued by hand on `jobs_review`.
+- **5.2 (2026-11-19):** `ingest` routes `pull_request` opened / synchronize / reopened / ready_for_review to `jobs_review` (drafts, bot authors, forks and closed PRs skipped), and `issues.opened` to `jobs` plus `jobs_issue` (bot authors and tierbound's own issues skipped for the drafter). `tierbound_ingest_route` records the delivery once, allowlists the queues and dedupes review jobs on `repo#pr@head_sha`; tests are `TestIngest*` in `worker/internal/e2e/ingest_test.go`. There is no `workflow_run` join until 5.1 exists. **Owner step:** subscribe the App to Pull request and Issues events and add the PR permissions (`runbooks/hosted-setup.md` step 7), then restart the workers.
+- **Hosted 2026-11-19:** the first approved review (PR #8, action `d067c553`) failed with GitHub 403 on `POST /pulls/8/reviews`: the App lacked Pull requests: write. Fix the permission, then retry per `runbooks/effect-stuck.md` §3 (same approval; `TestReviewForbiddenThenRetryAfterPermissionFixPostsOnce`).
+- **Deferred:** 5.1 (evidence workflow; until then evidence is empty and any cited evidence id is dropped).
 
 #### Step 5.1 — Evidence workflow
 
@@ -847,6 +849,8 @@ Commit this as its own step: `docs(w4.0): AGENTS.md invariants for v2`.
 **Files:** `supabase/functions/ingest` (`pull_request`, `workflow_run`; join on `head_sha`; idempotent on delivery id and `head_sha`), and the App webhook events (owner click: subscribe to Pull request and Workflow run).
 
 **Done when:** `TestReviewJobEnqueuedOncePerHeadSha` passes: duplicate deliveries, and either arrival order of the two events, still produce one job.
+
+**Status (2026-11-19):** the `pull_request` half is done: `TestIngestRedeliveryEnqueuesOnce` and `TestIngestReviewDedupesPerHead` cover duplicate deliveries and repeated events for one head. The `workflow_run` join (and its arrival-order case) waits for 5.1's evidence.
 
 **Commit:** `feat(w5.2): ingest enqueues PR review jobs`
 

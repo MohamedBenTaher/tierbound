@@ -26,7 +26,7 @@ worker → proposed comment → approval from Cursor (OAuth 2.1, GitHub sign-in)
 
 ## How it flows
 
-1. **Ingest:** a GitHub webhook lands in an Edge Function, which dedupes it by delivery id and queues a job (pgmq).
+1. **Ingest:** a GitHub webhook lands in an Edge Function, which dedupes it by delivery id and queues a job (pgmq) for each agent it concerns: opened issues for triage and the issue-drafter, opened or updated pull requests for review-pr.
 2. **Propose:** the Go worker reads the issue with a read-only token, drafts a comment with an LLM, and stores it as a *proposed action* with its `payload_hash`.
 3. **Review:** in Cursor, `list_pending_actions` / `get_action` show the exact text, target and hash.
 4. **Approve:** `approve_action(hash)` decides in one locked transaction. A changed proposal no longer matches the hash.
@@ -84,7 +84,7 @@ https://github.com/user-attachments/assets/91f61f07-50cf-4d53-a768-980b8b7df757
 ## Run it
 
 - **Local:** `supabase start && supabase db reset`, then `scripts/test-effector.sh` runs the end-to-end suite against a fake GitHub. Worker: `cd worker && go test ./... && go run ./cmd/worker`.
-- **Hosted:** [runbooks/hosted-setup.md](runbooks/hosted-setup.md) covers linking, pushing, secrets, deploying, the GitHub App, and approving from Cursor.
+- **Hosted:** [runbooks/hosted-setup.md](runbooks/hosted-setup.md) covers linking, pushing, secrets, deploying, the GitHub App, and approving from Cursor. One manual step outside the CLI: in the GitHub App settings subscribe to "Pull request" and "Issues" events and grant Pull requests: read if missing (write, plus Commit statuses: write, for posting reviews; the runbook lists each kind's permissions). Then restart the workers.
 - **Evals:** `cd worker && go run ./cmd/evalscore ../evals/golden` replays the recording for the current `config_hash`; `-record` re-drafts with the model. See [evals/README.md](evals/README.md).
 
 ## Docs
