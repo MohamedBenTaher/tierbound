@@ -4,6 +4,7 @@
 package agentconfig
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -139,10 +140,7 @@ func (c Config) Hash() (string, error) {
 
 // QueueName is the pgmq queue to read: Queue, or DefaultQueue when unset.
 func (c Config) QueueName() string {
-	if c.Queue == "" {
-		return DefaultQueue
-	}
-	return c.Queue
+	return cmp.Or(c.Queue, DefaultQueue)
 }
 
 // Grants reports whether tool_grant contains grant.

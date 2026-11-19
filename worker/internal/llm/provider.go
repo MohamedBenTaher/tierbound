@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net/http"
@@ -91,16 +92,10 @@ func ForProvider(provider, model string, getenv func(string) string, o Options) 
 	if key == "" {
 		return nil, fmt.Errorf("llm: %s is not set (provider %s)", spec.keyEnv, normalize(provider))
 	}
-	url := getenv(spec.urlEnv)
-	if url == "" {
-		url = spec.defaultURL
-	}
+	url := cmp.Or(getenv(spec.urlEnv), spec.defaultURL)
 	return spec.build(key, model, strings.TrimRight(url, "/"), o), nil
 }
 
 func normalize(provider string) string {
-	if provider == "" {
-		return ProviderGroq
-	}
-	return provider
+	return cmp.Or(provider, ProviderGroq)
 }

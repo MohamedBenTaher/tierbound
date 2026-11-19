@@ -5,6 +5,7 @@ package llm
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -30,9 +31,7 @@ type Client struct {
 // New returns a chat client for model. Empty baseURL means
 // https://api.groq.com/openai/v1 (set GROQ_API_URL for a local stub).
 func New(apiKey, model, baseURL string) *Client {
-	if baseURL == "" {
-		baseURL = "https://api.groq.com/openai/v1"
-	}
+	baseURL = cmp.Or(baseURL, "https://api.groq.com/openai/v1")
 	return &Client{
 		apiKey:  apiKey,
 		baseURL: strings.TrimRight(baseURL, "/"),
