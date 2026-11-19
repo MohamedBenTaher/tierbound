@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -22,6 +23,13 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "worker:", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	printHash := flag.Bool("print-config-hash", false, "print the agent config_hash and exit")
 	once := flag.Bool("once", false, "process at most one job and exit")
 	configPath := flag.String("config", "", "path to the agent config TOML (default: $AGENT_CONFIG_PATH, then config/triage-drafter.toml)")
@@ -29,39 +37,33 @@ func main() {
 
 	cfg, err := agentconfig.Load(resolveConfigPath(*configPath))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "worker:", err)
-		os.Exit(1)
+		return err
 	}
-
 	if *printHash {
 		h, err := cfg.Hash()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "worker:", err)
-			os.Exit(1)
+			return err
 		}
 		fmt.Println(h)
-		return
+		return nil
 	}
 
 	dbURL := os.Getenv("WORKER_DATABASE_URL")
 	if dbURL == "" {
-		fmt.Fprintln(os.Stderr, "worker: WORKER_DATABASE_URL is not set")
-		os.Exit(1)
+		return errors.New("WORKER_DATABASE_URL is not set")
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "worker: connect:", err)
-		os.Exit(1)
+		return fmt.Errorf("connect: %w", err)
 	}
 	defer pool.Close()
 
 	drafter, err := llm.ForProvider(cfg.Provider, cfg.Model, os.Getenv, llm.Options{JSON: cfg.StrictJSON()})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "worker:", err)
-		os.Exit(1)
+		return err
 	}
 	gh := githubro.New(os.Getenv("GITHUB_READ_TOKEN"), os.Getenv("GITHUB_API_URL"))
 	deps := propose.Deps{
@@ -76,10 +78,9 @@ func main() {
 
 	if *once {
 		if _, err := propose.ProcessOne(ctx, deps); err != nil {
-			fmt.Fprintln(os.Stderr, "worker: job failed:", err)
-			os.Exit(1)
+			return fmt.Errorf("job failed: %w", err)
 		}
-		return
+		return nil
 	}
 
 	log.Printf("tierbound worker: polling jobs for agent %s", cfg.Name)
@@ -97,9 +98,10 @@ func main() {
 		}
 	}
 	log.Printf("tierbound worker: stopped")
+	return nil
 }
 
-// resolveConfigPath prefers the flag, then the env, then the shipped file.
+// resolveConfigPath prefers the flag, then the env, then the shipped files in worker/ and config/.
 // The two candidates cover running from worker/ (go run) and from the repo
 // root (scripts, pre-commit).
 func resolveConfigPath(flagVal string) string {
