@@ -6,8 +6,9 @@
 #   TIERBOUND_ENV_FILE=.env.local.bak scripts/test-effector.sh   # .env holds hosted values
 #
 # What it does: generates a throwaway GitHub App key (PKCS#1, like GitHub's),
-# serves the Edge Functions with effector secrets that point GITHUB_API_URL at
-# the fake GitHub the Go tests start on 127.0.0.1:54399, runs the tests, then
+# serves the Edge Functions with local-only ingest and effector secrets (the
+# effector's GITHUB_API_URL points at the fake GitHub the Go tests start on
+# 127.0.0.1:54399), runs the tests, then
 # stops the function server. Restart your own `supabase functions serve`
 # afterwards if you had one running.
 set -euo pipefail
@@ -46,7 +47,7 @@ openssl genrsa -traditional -out "$tmp/app.pem" 2048 2>/dev/null
 pem_one_line="$(awk 'BEGIN{ORS="\\n"} {print}' "$tmp/app.pem")"
 
 cat > "$tmp/functions.env" <<ENV
-GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET:-}
+GITHUB_WEBHOOK_SECRET=tierbound-ingest-local-only
 EFFECTOR_DATABASE_URL=postgresql://tierbound_effector:tierbound-local-only@db:5432/postgres
 EFFECTOR_WEBHOOK_SECRET=tierbound-local-only
 GITHUB_API_URL=http://host.docker.internal:${FAKE_PORT}
@@ -78,6 +79,7 @@ TEST_SUPABASE_URL="$SUPABASE_URL" \
 TEST_SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
 TEST_SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY" \
 TEST_EFFECTOR_WEBHOOK_SECRET=tierbound-local-only \
+TEST_INGEST_WEBHOOK_SECRET=tierbound-ingest-local-only \
 TEST_FAKE_GITHUB_ADDR="127.0.0.1:${FAKE_PORT}" \
 TEST_GITHUB_APP_KEY_FILE="$tmp/app.pem" \
 TEST_GITHUB_APP_ID=424242 \

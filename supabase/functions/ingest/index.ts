@@ -1,8 +1,10 @@
-// Ingest: GitHub issues.opened webhook -> pgmq jobs queue.
-// Plan step 1.3. Authenticity is the X-Hub-Signature-256 HMAC over the raw
-// body (config.toml turns JWT verification off for this function).
+// Ingest: GitHub App webhook -> agent queues (plan steps 1.3, 5.2). Routing
+// lives in route.ts; tierbound_ingest_route records the delivery once and
+// enqueues. Authenticity is the X-Hub-Signature-256 HMAC over the raw body
+// (config.toml turns JWT verification off for this function).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { type Job, route } from "./route.ts";
 
 function json(payload: unknown, status: number): Response {
   return new Response(JSON.stringify(payload), {
@@ -61,25 +63,6 @@ async function verifySignature(
   return timingSafeEqual(mac, claimed);
 }
 
-// The queue message shape, consumed by the Go worker (plan step 1.4).
-function parseIssueOpened(
-  body: unknown,
-): { repo: string; issue_number: number } | null {
-  if (typeof body !== "object" || body === null) {
-    return null;
-  }
-  const repo = (body as { repository?: { full_name?: unknown } }).repository
-    ?.full_name;
-  const number = (body as { issue?: { number?: unknown } }).issue?.number;
-  if (typeof repo !== "string" || repo.length === 0) {
-    return null;
-  }
-  if (typeof number !== "number" || !Number.isInteger(number) || number < 1) {
-    return null;
-  }
-  return { repo, issue_number: number };
-}
-
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return json({ ok: false, error: "method not allowed" }, 405);
@@ -98,11 +81,6 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: "invalid signature" }, 401);
   }
 
-  const event = req.headers.get("x-github-event");
-  if (event !== "issues") {
-    return json({ ok: false, error: "unsupported event" }, 400);
-  }
-
   const deliveryId = req.headers.get("x-github-delivery");
   if (!deliveryId) {
     return json({ ok: false, error: "missing x-github-delivery" }, 400);
@@ -115,14 +93,14 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: "invalid JSON" }, 400);
   }
 
-  // The Issues subscription delivers every action; only "opened" enqueues.
-  if ((body as { action?: unknown }).action !== "opened") {
-    return json({ ok: true, ignored: "action not opened" }, 200);
+  // Subscriptions deliver every action of an event (and a ping on setup);
+  // anything route() does not route is acknowledged and enqueues nothing.
+  const routed = route(req.headers.get("x-github-event"), body);
+  if ("error" in routed) {
+    return json({ ok: false, error: routed.error }, 400);
   }
-
-  const job = parseIssueOpened(body);
-  if (job === null) {
-    return json({ ok: false, error: "malformed issues.opened payload" }, 400);
+  if ("ignored" in routed) {
+    return json({ ok: true, ignored: routed.ignored }, 200);
   }
 
   const admin = createClient(
@@ -131,16 +109,18 @@ Deno.serve(async (req) => {
     { auth: { persistSession: false, autoRefreshToken: false } },
   );
 
-  const { data, error } = await admin.rpc("tierbound_ingest_enqueue", {
-    delivery_id: deliveryId,
-    repo: job.repo,
-    issue_number: job.issue_number,
+  const { data, error } = await admin.rpc("tierbound_ingest_route", {
+    p_delivery_id: deliveryId,
+    p_jobs: routed.jobs,
   });
   if (error) {
     return json({ ok: false, error: error.message }, 500);
   }
-  return json(
-    { ok: true, enqueued: data === true, delivery_id: deliveryId },
-    200,
-  );
+  // enqueued: messages sent now; 0 for a redelivery or a duplicate head.
+  return json({
+    ok: true,
+    enqueued: data,
+    queues: routed.jobs.map((j: Job) => j.queue),
+    delivery_id: deliveryId,
+  }, 200);
 });
