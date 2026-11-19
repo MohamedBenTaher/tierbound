@@ -98,8 +98,12 @@ func (f *fakeGitHub) createReview(w http.ResponseWriter, r *http.Request) {
 	}
 	f.mu.Lock()
 	f.reviewPosts++
-	delay := f.postDelay
+	delay, forbid := f.postDelay, f.forbidReviews
 	f.mu.Unlock()
+	if forbid {
+		writeJSON(w, http.StatusForbidden, map[string]string{"message": "Resource not accessible by integration"})
+		return
+	}
 	time.Sleep(delay)
 
 	f.mu.Lock()

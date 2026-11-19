@@ -134,3 +134,42 @@ func TestReviewPostedStatusFailedRetriesStatusOnly(t *testing.T) {
 		t.Fatalf("effect = %+v, want posted with %s", e, rv.URL)
 	}
 }
+
+// GitHub refuses the review (403: the App lacks Pull requests: write). The
+// effect ends failed with nothing recorded; once the permission is granted
+// the operator re-invokes the effector for the same approval
+// (runbooks/effect-stuck.md) and exactly one review lands.
+func TestReviewForbiddenThenRetryAfterPermissionFixPostsOnce(t *testing.T) {
+	h := setup(t)
+	gh := startFakeGitHub(t, h)
+	gh.set(func(f *fakeGitHub) { f.forbidReviews = true })
+	a := h.seedReviewAction(t, h.seedUser(t))
+	gh.setHead(a.PR, reviewHead)
+
+	h.forceApprove(t, a.action, a.Hash)
+	waitFor(t, "effects.status = failed after the 403", 20*time.Second, func() bool {
+		return h.effect(t, a.action).Status == "failed"
+	})
+	if e := h.effect(t, a.action); e.ExternalID != nil || e.Attempts != 1 {
+		t.Fatalf("after the 403: effects = %+v, want failed, external_id null, attempts 1", e)
+	}
+	if posts, reviews, _ := gh.reviewsOn(a.PR, a.Repo); posts != 1 || len(reviews) != 0 {
+		t.Fatalf("after the 403: %d review POSTs, %d reviews; want 1 and 0", posts, len(reviews))
+	}
+	if r := h.invoke(t, a.action); r.Status != 502 || r.Outcome != "failed" || !strings.Contains(r.Error, "403") {
+		t.Fatalf("retry while still forbidden: %d %s %q, want 502 failed naming 403", r.Status, r.Outcome, r.Error)
+	}
+
+	gh.set(func(f *fakeGitHub) { f.forbidReviews = false }) // permission granted
+	if r := h.invoke(t, a.action); r.Status != 200 || r.Outcome != "posted" {
+		t.Fatalf("retry after the fix: %d %s %s, want 200 posted", r.Status, r.Outcome, r.Error)
+	}
+	rv := assertOneReview(t, gh, a, 3)
+	if e := h.effect(t, a.action); e.Status != "posted" || e.ExternalID == nil || *e.ExternalID != rv.URL || e.Attempts != 3 {
+		t.Fatalf("effect = %+v, want posted with %s, attempts 3", e, rv.URL)
+	}
+	if r := h.invoke(t, a.action); r.Status != 200 || r.Outcome != "already_posted" {
+		t.Fatalf("replay: %d %s %s, want 200 already_posted", r.Status, r.Outcome, r.Error)
+	}
+	assertOneReview(t, gh, a, 3)
+}

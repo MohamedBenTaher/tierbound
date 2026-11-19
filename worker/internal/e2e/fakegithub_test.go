@@ -52,6 +52,9 @@ type fakeGitHub struct {
 	reviewPosts  int
 	statuses     []fakeStatus
 	failStatuses bool
+	// forbidReviews answers 403 "Resource not accessible by integration" to
+	// review POSTs (the App lacks Pull requests: write).
+	forbidReviews bool
 }
 
 func startFakeGitHub(t *testing.T, h harness) *fakeGitHub {
